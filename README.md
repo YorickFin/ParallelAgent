@@ -24,16 +24,17 @@ ParallelAgent 是一套在 Trae Work / VSCode-like IDE 中实现**多 AI 会话�
 ```
 adapters/
 └── trae/                    # Trae Work 适配层（未来可平级扩展 cursor/ 等）
-    ├── docs/                # 方案设计文档（定稿、历史设计、生命周期治理、实现路径）
+    ├── docs/                # 方案设计文档（定稿、历史设计、生命周期治理）
+    ├── plugin/              # 编排器插件（CDP 执行器 + HTTP 网关 + 文件信箱 watch）
+    │   └── parallelagent-orchestrator/
     ├── probes/              # 探针脚本（开发期摸清 Trae/CDP 行为，非产品代码）
-    └── skills/              # 仲裁者/轨道 Skill（待实现）
-
-正式实现代码（编排器插件等）按类型单独建目录，如 `plugin/`，不与探针混放。
+    ├── shared/              # 两 Skill 共享的协议 reference 与手册模板
+    └── skills/              # 仲裁者/轨道 Skill
 ```
 
 ## 状态
 
-一期（手动触发版）：方案已冻结，实现进行中。
+一期（手动触发版）：**已实现并联调通过**。编排器插件覆盖 /health、/new、/ping、/dispatch、/watch、/delete 全流程，多轨并行切换、建轨与删轨的端到端链路均已实测验证。
 
 ## License
 
