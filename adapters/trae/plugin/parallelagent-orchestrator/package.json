@@ -1,0 +1,81 @@
+{
+  "name": "parallelagent-orchestrator",
+  "displayName": "ParallelAgent Orchestrator",
+  "description": "CDP 执行器 + HTTP 网关 + 文件信箱 watch —— 仲裁者的自动化之手",
+  "version": "0.0.1",
+  "publisher": "yorickfin",
+  "license": "Apache-2.0",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "onCommand:parallelagent.start",
+    "onCommand:parallelagent.stop"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "parallelagent.start",
+        "title": "ParallelAgent: 启动编排器"
+      },
+      {
+        "command": "parallelagent.stop",
+        "title": "ParallelAgent: 停止编排器"
+      },
+      {
+        "command": "parallelagent.health",
+        "title": "ParallelAgent: 健康检查"
+      },
+      {
+        "command": "parallelagent.restartWithDebug",
+        "title": "ParallelAgent: 带调试端口重启 Trae"
+      }
+    ],
+    "configuration": {
+      "title": "ParallelAgent",
+      "properties": {
+        "parallelagent.cdpPort": {
+          "type": "number",
+          "default": 9317,
+          "description": "CDP 调试端口（Trae 启动时 --remote-debugging-port 指定）"
+        },
+        "parallelagent.httpPort": {
+          "type": "number",
+          "default": 9318,
+          "description": "HTTP 网关监听端口（仲裁者 Skill fetch 调用）"
+        },
+        "parallelagent.mailboxRoot": {
+          "type": "string",
+          "default": "docs/协调",
+          "description": "文件信箱根目录（相对于 workspace 根）"
+        },
+        "parallelagent.pollIntervalMs": {
+          "type": "number",
+          "default": 1000,
+          "description": "回执文件轮询间隔（毫秒）"
+        },
+        "parallelagent.watchTimeoutS": {
+          "type": "number",
+          "default": 1800,
+          "description": "watch 默认超时（秒）"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "node esbuild.build.js",
+    "watch": "node esbuild.build.js --watch",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0",
+    "esbuild": "^0.24.0",
+    "@types/ws": "^8.5.10",
+    "@types/node": "^18.19.0",
+    "@types/vscode": "^1.80.0"
+  }
+}

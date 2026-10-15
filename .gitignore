@@ -9,3 +9,11 @@ Thumbs.db
 
 # 私人文件
 ._private/
+
+# 依赖与构建产物
+node_modules/
+dist/
+*.vsix
+
+# Trae 工作区临时文件
+.trae/

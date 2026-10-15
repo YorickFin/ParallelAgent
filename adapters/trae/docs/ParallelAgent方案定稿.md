@@ -387,11 +387,14 @@
 | 任务标题 | `.taskText` | innerText |
 | 当前选中 | `.taskItemSelected`（全页唯一） | — |
 | 任务项 | `.taskItem` | 合成 click 切换有效 |
-| 更多菜单 | `.taskMoreBtn` | 需 PointerEvent/真实鼠标事件 |
-| 菜单项 | `.task-list-menu-item` | 含"置顶/分享/重命名/删除"，删除有 `.task-list-menu-item-danger` |
-| 删除弹窗 | class 含 `dialog-Di866XR` | 按钮"取消"/"删除"（后者 class 含 `errorstrong`） |
+| 更多菜单 | `.taskMoreBtn` | 常态 display:none（hover 才显示），**坐标点击会点空，必须合成 click**（对 display:none 元素照样触发 React handler） |
+| 菜单项 | `.task-list-menu-item` | 含"置顶/分享/重命名/删除"，删除项**按文本匹配"删除任务"**（danger 类名哈希不稳定，不依赖） |
+| 删除弹窗 | 无稳定选择器 | **按"确认删除"标题叶节点文本检测**；确认按钮=弹窗容器内（向上找 dialog/modal/overlay 类名）文本为"删除"的 button，合成 click |
 | 运行态图标 | `.taskStatusIcon .session-status-icon-progress` `svg.trae-icon-TaskState_running` | — |
-| 新建入口 | `.task-panel-entry-buttons-fixed` `.task-list-new-task-item-inactive` | 外层 click 无效，需 CDP 真实点击内层中心坐标 |
+| 项目分组行名称 | `.task-list-group-name` | 文本即项目名（如 "ParallelAgent"），按文本定位分组 |
+| 分组行新建按钮 | `.task-list-group-header` 内 `.task-list-group-new-btn` | **新建入口首选**：hover 显示但常驻 DOM，CDP 真实点击（mouseMoved+Pressed+Released）；一步新建且自动挂该项目 |
+| 草稿会话 | （机制） | 点击新建后进入草稿态：输入界面就绪但**不进任务列表、无 sid**；**首条消息发出后 sid 才落库** → 顺序必须是"点击→等聚焦→注入→发送→等 sid" |
+| 删除后回落 | （机制） | 删除当前选中会话后，主区域回到"Build With TRAE"空白草稿页（无选中、无 sid）；对编排器无害——后续所有动作都先 navigateTo+assertIdentity 重建上下文 |
 | Lexical 结构 | `<p class="chat-input-v2__paragraph"><span data-lexical-text="true">文本</span></p>` | 注入后 |
 
 **禁止硬编码坐标**，必须动态 `getBoundingClientRect()`。
