@@ -21,8 +21,13 @@ ParallelAgent 是一套在 Trae Work / VSCode-like IDE 中实现**多 AI 会话�
 
 ## 目录
 
-- `docs/` — 方案设计文档（定稿、历史设计、生命周期治理）
-- `scripts/` — CDP 探针与运维脚本
+```
+adapters/
+└── trae/                    # Trae Work 适配层（未来可平级扩展 cursor/ 等）
+    ├── docs/                # 方案设计文档（定稿、历史设计、生命周期治理、实现路径）
+    ├── scripts/             # CDP 探针与运维脚本
+    └── skills/              # 仲裁者/轨道 Skill（待实现）
+```
 
 ## 状态
 
