@@ -1,0 +1,67 @@
+// Copyright 2026 ParallelAgent Contributors
+// SPDX-License-Identifier: Apache-2.0
+
+/** ParallelAgent CLI 入口 */
+
+import { parseArgs } from 'node:util';
+import { runInit } from './commands/init.js';
+import { runDoctor } from './commands/doctor.js';
+import { runUninit } from './commands/uninit.js';
+
+const USAGE = `
+ParallelAgent —— 一键安装 / 自检 / 卸载
+
+用法：
+  parallelagent <命令> [选项]
+
+命令：
+  init      装扩展 + 铺 Skills + 写 argv.json 调试端口（幂等）
+  doctor    环境自检报告（全绿退出码 0，有问题 1）
+  uninit    逆向清理 skills 与 argv.json 配置
+
+init 选项：
+  --dry-run         只打印将执行的动作，不落地
+  --trae-cli <path> 显式指定 Trae CLI 命令路径（探测失败时兜底）
+
+示例：
+  npx parallelagent@latest init
+  parallelagent doctor
+`;
+
+async function main(): Promise<void> {
+  const { positionals, values } = parseArgs({
+    allowPositionals: true,
+    options: {
+      'dry-run': { type: 'boolean', default: false },
+      'trae-cli': { type: 'string' },
+      help: { type: 'boolean', short: 'h', default: false },
+    },
+  });
+
+  const cmd = positionals[0];
+
+  if (values.help || !cmd) {
+    console.log(USAGE);
+    return;
+  }
+
+  switch (cmd) {
+    case 'init':
+      await runInit({ dryRun: values['dry-run'] ?? false, traeCli: values['trae-cli'] });
+      break;
+    case 'doctor':
+      await runDoctor();
+      break;
+    case 'uninit':
+      runUninit();
+      break;
+    default:
+      console.error(`未知命令: ${cmd}\n${USAGE}`);
+      process.exit(1);
+  }
+}
+
+main().catch((err) => {
+  console.error('致命错误:', (err as Error).message);
+  process.exit(1);
+});

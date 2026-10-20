@@ -36,15 +36,15 @@ export function buildPhrase(
 ): string {
   switch (template) {
     case 'new_track':
-      return `读手册 docs/协调/轨道启动手册.md，你是 ${params.轨}，待命`;
+      return `读手册 .parallel-agent/轨道启动手册.md，你是 ${params.轨}，待命`;
     case 'dispatch_round':
       return `读转达第${params.轮次}轮你的→${params.轨}节，执行，写回执`;
     case 'cancel_standby':
       return `本轮无 ${params.轨} 任务，待命`;
     case 'arbiter_ii':
-      return `读交接手册第${params.版本}版 docs/协调/交接手册/第${params.版本}版-*.md，你是仲裁者 II 世，承接 ${params.轨道们?.join('/') ?? ''} 收尾`;
+      return `读交接手册第${params.版本}版 .parallel-agent/交接手册/第${params.版本}版-*.md，你是仲裁者 II 世，承接 ${params.轨道们?.join('/') ?? ''} 收尾`;
     case 'track_ii':
-      return `读交接手册第${params.版本}版 docs/协调/交接手册/第${params.版本}版-*.md，你是 ${params.轨} II 世，承接 ${params.轨} 身份`;
+      return `读交接手册第${params.版本}版 .parallel-agent/交接手册/第${params.版本}版-*.md，你是 ${params.轨} II 世，承接 ${params.轨} 身份`;
   }
 }
 

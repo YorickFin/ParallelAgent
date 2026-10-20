@@ -17,7 +17,7 @@ export function readConfig(): ParallelAgentConfig {
   const workspaceRoot =
     vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
 
-  const mailboxRoot = cfg.get<string>('mailboxRoot', 'docs/协调');
+  const mailboxRoot = cfg.get<string>('mailboxRoot', '.parallel-agent');
   const absoluteMailboxRoot = path.isAbsolute(mailboxRoot)
     ? mailboxRoot
     : path.join(workspaceRoot, mailboxRoot);

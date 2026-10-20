@@ -1,0 +1,91 @@
+# Copyright 2026 ParallelAgent Contributors
+# SPDX-License-Identifier: Apache-2.0
+
+# 发布流程：打 v* tag 触发 → 打包 vsix → GitHub Release → Open VSX → npm
+#
+# 无长期密钥：
+#   - Open VSX:    GitHub OIDC Trusted Publisher + npx ovsx publish --trusted-publishing
+#   - npm:         GitHub OIDC Trusted Publisher + npm publish --provenance
+#   - GitHub 自带 GH_TOKEN 处理 release upload
+#
+# 首次发布历史（已完成）：
+#   - parallelagent@0.1.0 本地 npm publish（因为 npm 不允许 Trusted Publisher 绑到不存在的包名）
+#   - npm 网站和 Open VSX 网站各加一条 Trusted Publisher 记录（Workflow=release.yml）
+#
+# 任何一步失败都会中断后续 job（needs 依赖链），方便单步回滚修复。
+
+name: release
+
+on:
+  push:
+    tags: ['v*']
+
+jobs:
+  package-extension:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: adapters/trae/plugin/parallelagent-orchestrator
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: adapters/trae/plugin/parallelagent-orchestrator/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm build
+      - run: npx @vscode/vsce package --out parallelagent-orchestrator.vsix
+      - uses: actions/upload-artifact@v4
+        with:
+          name: parallelagent-orchestrator-vsix
+          path: adapters/trae/plugin/parallelagent-orchestrator/parallelagent-orchestrator.vsix
+
+  release-github:
+    needs: package-extension
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: parallelagent-orchestrator-vsix
+      - run: gh release create ${{ github.ref_name }} ./parallelagent-orchestrator.vsix --generate-notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  publish-open-vsx:
+    needs: package-extension
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: parallelagent-orchestrator-vsix
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npx ovsx publish ./parallelagent-orchestrator.vsix --trusted-publishing
+
+  publish-cli:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+    defaults:
+      run:
+        working-directory: packages/cli
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: packages/cli/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm build
+      - run: npm publish --access public --provenance
