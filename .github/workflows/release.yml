@@ -77,7 +77,7 @@ jobs:
   publish-cli:
     runs-on: ubuntu-latest
     permissions:
-      id-token: write
+      id-token: write  # OIDC: 让 npm CLI 能跟 GitHub 换 token
     defaults:
       run:
         working-directory: packages/cli
@@ -86,13 +86,32 @@ jobs:
       - uses: pnpm/action-setup@v4
         with:
           version: 10.33.2
+
+      # Node ≥ 22.14 + npm ≥ 11.5.1 是 npm Trusted Publishing 硬要求
+      # setup-node 写的 registry-url 会往 .npmrc 塞 authToken，npm CLI 看到它就跳过 OIDC
+      # 所以这里不设 registry-url（让 authToken 根本没机会被注入）
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: pnpm
           cache-dependency-path: packages/cli/pnpm-lock.yaml
-          registry-url: https://registry.npmjs.org
+
+      # Node 22 自带 npm 10；trusted publishing 需要 npm ≥ 11.5.1
+      - run: npm install -g npm@latest
+      - run: npm --version
+
+      # 保险起见：即使 setup-node 没写 authToken，也清一遍
+      # 任何残留的 NODE_AUTH_TOKEN 都会让 npm CLI 优先走 token 鉴权、跳过 OIDC 交换
+      - run: |
+          if [ -n "${NODE_AUTH_TOKEN:-}" ]; then
+            echo "WARNING: NODE_AUTH_TOKEN was set; unsetting for OIDC"
+          fi
+          { echo "NODE_AUTH_TOKEN="; } >> "$GITHUB_ENV"
+          rm -f "$HOME/.npmrc" || true
+
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
       - run: pnpm build
+
+      # OIDC 成功时 npm CLI 自动换 token 并发 provenance 签名；--registry 显式指定官方源
       - run: npm publish --access public --provenance --registry https://registry.npmjs.org/
