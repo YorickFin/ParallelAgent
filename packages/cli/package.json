@@ -5,6 +5,14 @@
   "description": "ParallelAgent 一键安装器：装扩展 + 铺 Skills + 写 argv.json 调试端口",
   "license": "Apache-2.0",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/YorickFin/ParallelAgent"
+  },
+  "homepage": "https://github.com/YorickFin/ParallelAgent",
+  "bugs": {
+    "url": "https://github.com/YorickFin/ParallelAgent/issues"
+  },
   "bin": {
     "parallelagent": "./dist/index.js"
   },
