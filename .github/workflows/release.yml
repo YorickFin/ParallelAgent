@@ -52,6 +52,7 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           name: parallelagent-orchestrator-vsix
@@ -71,7 +72,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      - run: npx ovsx publish ./parallelagent-orchestrator.vsix --trusted-publishing
+      - run: npx ovsx publish ./parallelagent-orchestrator.vsix
 
   publish-cli:
     runs-on: ubuntu-latest
@@ -94,4 +95,4 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
       - run: pnpm build
-      - run: npm publish --access public --provenance
+      - run: npm publish --access public --provenance --registry https://registry.npmjs.org/
