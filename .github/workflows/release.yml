@@ -74,10 +74,11 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: parallelagent-orchestrator-vsix
+      # ovsx 1.2+ 才支持 --trusted-publishing，且要求 Node >= 22
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
-      - run: npx ovsx publish ./parallelagent-orchestrator.vsix --trusted-publishing
+          node-version: 22
+      - run: npx ovsx@1.3.0 publish ./parallelagent-orchestrator.vsix --trusted-publishing --skip-duplicate
 
   publish-marketplace:
     needs: package-extension
