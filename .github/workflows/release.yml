@@ -77,7 +77,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      - run: npx ovsx publish ./parallelagent-orchestrator.vsix
+      - run: npx ovsx publish ./parallelagent-orchestrator.vsix --trusted-publishing
 
   publish-marketplace:
     needs: package-extension
@@ -139,4 +139,12 @@ jobs:
       - run: pnpm build
 
       # OIDC 成功时 npm CLI 自动换 token 并发 provenance 签名；--registry 显式指定官方源
-      - run: npm publish --access public --provenance --registry https://registry.npmjs.org/
+      # 已发布过同版本时跳过，保证 tag 重放不因 npm 409 中断
+      - name: Publish to npm
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          if npm view "parallelagent@$VERSION" version >/dev/null 2>&1; then
+            echo "parallelagent@$VERSION 已发布，跳过"
+          else
+            npm publish --access public --provenance --registry https://registry.npmjs.org/
+          fi
