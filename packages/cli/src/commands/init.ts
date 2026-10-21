@@ -1,0 +1,145 @@
+// Copyright 2026 ParallelAgent Contributors
+// SPDX-License-Identifier: Apache-2.0
+
+/** `parallelagent init`：一次性完成全部配置 */
+
+import * as fs from 'node:fs';
+import { detectTrae } from '../lib/detectTrae.js';
+import { ensureRemoteDebuggingPort } from '../lib/argvJson.js';
+import {
+  installFromOpenVsx,
+  installFromGithubRelease,
+  isExtensionInstalled,
+} from '../lib/installExtension.js';
+import { installSkills } from '../lib/installSkills.js';
+import { pingCdp, missingSkills } from '../lib/verify.js';
+
+const CDP_PORT = 9317;
+
+interface InitOptions {
+  dryRun: boolean;
+  traeCli?: string;
+}
+
+/** 打印将要执行的动作（dry-run 模式） */
+function dry(label: string): void {
+  console.log(`[dry-run] ${label}`);
+}
+
+export async function runInit(options: InitOptions): Promise<void> {
+  const { dryRun, traeCli } = options;
+
+  // ── 1. 探测 ──
+  if (dryRun) dry('探测 Trae 安装位置、数据目录、CLI 命令');
+
+  const trae = detectTrae();
+  if (!trae.dataDir) {
+    fail(
+      '未探测到 Trae 用户数据目录（~/.trae-cn 或 ~/.trae）' +
+        '\n请确认 Trae 已安装，或通过 --trae-cli 指定命令路径。',
+    );
+  }
+  console.log(`  ✓ 数据目录: ${trae.dataDir}`);
+
+  const cliCommand = traeCli ?? trae.cliCommand;
+  if (!cliCommand) {
+    fail(
+      '未找到 Trae CLI 命令（trae-cn / trae）' +
+        '\n可尝试用 --trae-cli 显式指定命令路径。',
+    );
+  }
+  console.log(`  ✓ CLI 命令: ${cliCommand}`);
+  if (trae.exePath) console.log(`  ✓ exe 路径: ${trae.exePath}`);
+
+  // ── 2. 装扩展 ──
+  console.log('');
+  console.log('步骤 2/5: 安装扩展');
+
+  if (!isExtensionInstalled(cliCommand)) {
+    if (dryRun) {
+      dry(`trae --install-extension yorickfin.parallelagent-orchestrator（Open VSX）`);
+      dry(`└─ 失败则下载 GitHub Release .vsix 再本地安装`);
+    } else {
+      let extResult = installFromOpenVsx(cliCommand);
+      if (!extResult.ok) {
+        console.log('  Open VSX 安装失败，尝试 GitHub Release 兜底...');
+        extResult = await installFromGithubRelease(cliCommand);
+      }
+      if (!extResult.ok) fail(`扩展安装失败:\n${extResult.output}`);
+      console.log('  ✓ 扩展已安装');
+    }
+  } else {
+    console.log('  ✓ 扩展已安装（跳过）');
+  }
+
+  // ── 3. 铺 skills ──
+  console.log('');
+  console.log('步骤 3/5: 铺 Skills');
+
+  if (dryRun) {
+    dry(`拷 skills → ${trae.dataDir}/skills/`);
+  } else {
+    const installed = installSkills(trae.dataDir);
+    for (const p of installed) console.log(`  ✓ ${p}`);
+  }
+
+  // ── 4. 写 argv.json ──
+  console.log('');
+  console.log('步骤 4/5: 配置调试端口');
+
+  const argvPath = `${trae.dataDir}/argv.json`;
+  if (dryRun) {
+    dry(`argv.json 增量合并: remote-debugging-port = ${CDP_PORT}`);
+    console.log(`  目标文件: ${argvPath}`);
+  } else {
+    const written = ensureRemoteDebuggingPort(argvPath, CDP_PORT);
+    console.log(
+      written
+        ? `  ✓ 已写入 argv.json: remote-debugging-port = ${CDP_PORT}`
+        : `  ✓ argv.json 已含正确端口，无需改动`,
+    );
+  }
+
+  // ── 5. 验证 ──
+  console.log('');
+  console.log('步骤 5/5: 验证');
+
+  if (dryRun) {
+    dry('检查 skills 文件存在');
+    dry('ping CDP（如 Trae 运行中）');
+  } else {
+    const missing = missingSkills(trae.dataDir);
+    if (missing.length) {
+      fail(`Skills 缺失:\n${missing.join('\n')}`);
+    }
+    console.log('  ✓ Skills 文件就位');
+
+    const cdpOk = await pingCdp(CDP_PORT);
+    if (cdpOk) {
+      console.log(`  ✓ CDP 端口 ${CDP_PORT} 连通`);
+    } else {
+      console.log(
+        `  ⚠ CDP 端口 ${CDP_PORT} 暂不通（Trae 未运行，重启后生效）`,
+      );
+    }
+  }
+
+  // ── 成功面板 ──
+  console.log('');
+  console.log('========================================');
+  console.log('ParallelAgent 初始化完成');
+  console.log('========================================');
+  console.log('');
+  console.log('后续操作：');
+  console.log('  1. 重启 Trae（双击图标 / 开始菜单 / 任务栏）');
+  console.log('  2. Ctrl+Shift+P → ParallelAgent: 启动编排器');
+  console.log('');
+  console.log('诊断：');
+  console.log('  parallelagent doctor      # 环境自检');
+  console.log('');
+}
+
+function fail(msg: string): never {
+  console.error('错误:', msg);
+  process.exit(1);
+}

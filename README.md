@@ -19,6 +19,27 @@ ParallelAgent 是一套在 Trae Work / VSCode-like IDE 中实现**多 AI 会话�
       └──── 文件信箱 ◀── 轨道会话 T-A/B/C/D
 ```
 
+## 安装（v1.1.0+）
+
+前置：Windows + Trae CN + Node.js ≥ 18。
+
+```powershell
+npx parallelagent@latest init
+```
+
+一条命令完成：安装编排器扩展（Open VSX，失败自动走 GitHub Release 兜底）→ 铺两个全局 Skill 到 `~/.trae-cn/skills/` → 向 `~/.trae-cn/argv.json` 增量写入调试端口 9317。
+
+之后每次启动 Trae（双击图标 / 开始菜单 / 任务栏均可），调试端口自动就绪。在 Trae 中 `Ctrl+Shift+P → ParallelAgent: 启动编排器` 进入工作流。
+
+其他命令：
+
+```powershell
+parallelagent doctor   # 环境自检（全绿退出码 0）
+parallelagent uninit   # 逆向清理（不动项目层 .parallel-agent/ 信箱）
+```
+
+> 一期源码安装方式（克隆 + pnpm build）仍保留给开发者，见 `adapters/trae/`。
+
 ## 目录
 
 ```
@@ -35,6 +56,14 @@ adapters/
 ## 状态
 
 一期（手动触发版）：**已实现并联调通过**。编排器插件覆盖 /health、/new、/ping、/dispatch、/watch、/delete 全流程，多轨并行切换、建轨与删轨的端到端链路均已实测验证。
+
+v1.1.0 新增：版本化信箱（`转达/第N轮/T-X-v{M}.md`）、开轨就绪握手（`就绪/T-X.md` + `POST /wait-ready`）、单轨单在途消息纪律。
+
+## 测试验证项目
+
+[v1.1.0 测试验证项目：slate-desktop](https://github.com/YorickFin/slate-desktop)
+
+一个 pywebview + Vite 前端 + Python 后端的桌面应用，用于在真实多轨开发场景中验证 v1.1.0 的版本化信箱、就绪握手与多轨并行调度。
 
 ## License
 

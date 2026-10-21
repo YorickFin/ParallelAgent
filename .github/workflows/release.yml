@@ -1,0 +1,121 @@
+# Copyright 2026 ParallelAgent Contributors
+# SPDX-License-Identifier: Apache-2.0
+
+# 发布流程：打 v* tag 触发 → 打包 vsix → GitHub Release → Open VSX → npm
+#
+# 无长期密钥：
+#   - Open VSX:    GitHub OIDC Trusted Publisher + npx ovsx publish --trusted-publishing
+#   - npm:         GitHub OIDC Trusted Publisher + npm publish --provenance
+#   - GitHub 自带 GH_TOKEN 处理 release upload
+#
+# 首次发布历史（已完成）：
+#   - parallelagent@0.1.0 本地 npm publish（因为 npm 不允许 Trusted Publisher 绑到不存在的包名）
+#   - npm 网站和 Open VSX 网站各加一条 Trusted Publisher 记录（Workflow=release.yml）
+#
+# 任何一步失败都会中断后续 job（needs 依赖链），方便单步回滚修复。
+
+name: release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+jobs:
+  package-extension:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: adapters/trae/plugin/parallelagent-orchestrator
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: adapters/trae/plugin/parallelagent-orchestrator/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm build
+      - run: npx @vscode/vsce package --out parallelagent-orchestrator.vsix --no-dependencies --allow-missing-repository
+      - uses: actions/upload-artifact@v4
+        with:
+          name: parallelagent-orchestrator-vsix
+          path: adapters/trae/plugin/parallelagent-orchestrator/parallelagent-orchestrator.vsix
+
+  release-github:
+    needs: package-extension
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: parallelagent-orchestrator-vsix
+      - name: Delete existing release if any
+        run: gh release delete ${{ github.ref_name }} -y || true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - run: gh release create ${{ github.ref_name }} ./parallelagent-orchestrator.vsix --generate-notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  publish-open-vsx:
+    needs: package-extension
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: parallelagent-orchestrator-vsix
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npx ovsx publish ./parallelagent-orchestrator.vsix
+
+  publish-cli:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write  # OIDC: 让 npm CLI 能跟 GitHub 换 token
+    defaults:
+      run:
+        working-directory: packages/cli
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.2
+
+      # Node ≥ 22.14 + npm ≥ 11.5.1 是 npm Trusted Publishing 硬要求
+      # setup-node 写的 registry-url 会往 .npmrc 塞 authToken，npm CLI 看到它就跳过 OIDC
+      # 所以这里不设 registry-url（让 authToken 根本没机会被注入）
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: packages/cli/pnpm-lock.yaml
+
+      # Node 22 自带 npm 10；trusted publishing 需要 npm ≥ 11.5.1
+      - run: npm install -g npm@latest
+      - run: npm --version
+
+      # 保险起见：即使 setup-node 没写 authToken，也清一遍
+      # 任何残留的 NODE_AUTH_TOKEN 都会让 npm CLI 优先走 token 鉴权、跳过 OIDC 交换
+      - run: |
+          if [ -n "${NODE_AUTH_TOKEN:-}" ]; then
+            echo "WARNING: NODE_AUTH_TOKEN was set; unsetting for OIDC"
+          fi
+          { echo "NODE_AUTH_TOKEN="; } >> "$GITHUB_ENV"
+          rm -f "$HOME/.npmrc" || true
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm build
+
+      # OIDC 成功时 npm CLI 自动换 token 并发 provenance 签名；--registry 显式指定官方源
+      - run: npm publish --access public --provenance --registry https://registry.npmjs.org/

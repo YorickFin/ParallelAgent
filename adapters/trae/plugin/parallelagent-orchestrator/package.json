@@ -1,9 +1,13 @@
 {
   "name": "parallelagent-orchestrator",
+  "packageManager": "pnpm@10.33.2",
   "displayName": "ParallelAgent Orchestrator",
   "description": "CDP 执行器 + HTTP 网关 + 文件信箱 watch —— 仲裁者的自动化之手",
-  "version": "0.0.1",
+  "version": "0.2.1",
   "publisher": "yorickfin",
+  "repository": "https://github.com/YorickFin/ParallelAgent",
+  "homepage": "https://github.com/YorickFin/ParallelAgent",
+  "bugs": "https://github.com/YorickFin/ParallelAgent/issues",
   "license": "Apache-2.0",
   "engines": {
     "vscode": "^1.80.0"
@@ -47,7 +51,7 @@
         },
         "parallelagent.mailboxRoot": {
           "type": "string",
-          "default": "docs/协调",
+          "default": ".parallel-agent",
           "description": "文件信箱根目录（相对于 workspace 根）"
         },
         "parallelagent.pollIntervalMs": {
