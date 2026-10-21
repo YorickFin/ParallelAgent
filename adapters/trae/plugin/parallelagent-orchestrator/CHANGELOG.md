@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.1.2
+
+- 修复 CLI 在 Windows 上无法启动 Trae CLI（`.cmd` 需经 shell、`where` 需优先取 `.cmd`）
+- 扩展代码无变更，版本与 CLI 对齐
+
 ## 1.1.1
 
 - 版本对齐到 1.1.1，与 CLI 同步发布；扩展代码无变更

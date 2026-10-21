@@ -40,13 +40,28 @@ export function compareVersions(a: string, b: string): number {
   return 0;
 }
 
+/** Windows 下给 shell 命令行转义单个参数 */
+function quoteWinArg(arg: string): string {
+  if (!/[\s"&|<>^]/.test(arg)) return arg;
+  return `"${arg.replace(/"/g, '\\"')}"`;
+}
+
 function run(cmd: string, args: string[]): { ok: boolean; output: string } {
   try {
-    const output = execFileSync(cmd, args, {
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'pipe'],
-      timeout: 120_000,
-    });
+    // Windows 上 .cmd/.bat 不能被 execFile 直接启动，必须经 shell
+    const viaShell = process.platform === 'win32' && /\.(cmd|bat)$/i.test(cmd);
+    const output = viaShell
+      ? execFileSync([cmd, ...args.map(quoteWinArg)].join(' '), {
+          encoding: 'utf8',
+          stdio: ['ignore', 'pipe', 'pipe'],
+          timeout: 120_000,
+          shell: true,
+        })
+      : execFileSync(cmd, args, {
+          encoding: 'utf8',
+          stdio: ['ignore', 'pipe', 'pipe'],
+          timeout: 120_000,
+        });
     return { ok: true, output };
   } catch (e) {
     const err = e as { stdout?: string; stderr?: string; message?: string };

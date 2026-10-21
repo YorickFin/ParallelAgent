@@ -48,15 +48,23 @@ export function detectDataDir(): string | null {
   return null;
 }
 
-/** 在 PATH 上查找命令（Windows where.exe） */
+/** 在 PATH 上查找命令（Windows where.exe）；优先返回 .cmd/.exe 等可执行文件 */
 function which(cmd: string): string | null {
   try {
     const out = execFileSync('where.exe', [cmd], {
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'ignore'],
     }).trim();
-    const first = out.split(/\r?\n/)[0]?.trim();
-    return first && isFile(first) ? first : null;
+    const lines = out
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter((l) => l && isFile(l));
+    // where 会同时命中 Git Bash 用的无扩展名脚本，Windows 下必须优先 .cmd/.exe
+    return (
+      lines.find((l) => /\.(cmd|exe|bat)$/i.test(l)) ??
+      lines[0] ??
+      null
+    );
   } catch {
     return null;
   }
@@ -125,8 +133,9 @@ export function detectExePath(): string | null {
  */
 export function detectCliCommand(exePath: string | null): string | null {
   for (const name of CLI_NAMES) {
+    // which 返回完整路径；返回命令名会导致 execFile 找不到 .cmd
     const found = which(name);
-    if (found) return name;
+    if (found) return found;
   }
   if (exePath) {
     const binDir = path.join(path.dirname(exePath), 'bin');
