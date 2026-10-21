@@ -1,10 +1,10 @@
 # Copyright 2026 ParallelAgent Contributors
 # SPDX-License-Identifier: Apache-2.0
 
-# 发布流程：打 v* tag 触发 → 打包 vsix → GitHub Release → Open VSX / VS Marketplace → npm
+# 发布流程：打 v* tag 触发 → 打包 vsix → GitHub Release → npm（Open VSX 默认关闭，审核通过后手动开启）
 #
 # 无长期密钥：
-#   - Open VSX:    GitHub OIDC Trusted Publisher + npx ovsx publish --trusted-publishing
+#   - Open VSX:    默认跳过（vars.PUBLISH_OPEN_VSX=true 才执行）；启用后用 GitHub OIDC Trusted Publisher
 #   - npm:         GitHub OIDC Trusted Publisher + npm publish --provenance
 #   - GitHub 自带 GH_TOKEN 处理 release upload
 #   - VS Marketplace: 需要仓库 secret VSCE_PAT（未配置则自动跳过该 job 的发布步骤）
@@ -65,7 +65,9 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+  # Open VSX 审核未通过前保持关闭；审核通过后在仓库 Variables 设置 PUBLISH_OPEN_VSX=true
   publish-open-vsx:
+    if: ${{ vars.PUBLISH_OPEN_VSX == 'true' }}
     needs: package-extension
     runs-on: ubuntu-latest
     permissions:
