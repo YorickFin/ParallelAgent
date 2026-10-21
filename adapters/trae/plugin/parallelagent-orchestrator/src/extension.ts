@@ -11,6 +11,7 @@ import { readConfig, ParallelAgentConfig } from './state/config';
 import { CdpClient } from './cdp/cdpClient';
 import { discoverAndConnect, CdpTarget } from './cdp/cdpTarget';
 import { createHttpServer } from './http/server';
+import type { RouteDeps } from './http/routes';
 import { OrbitTable } from './state/orbitTable';
 import { MailboxPaths } from './mailbox/paths';
 import { ReceiptWatcher } from './mailbox/watcher';
@@ -24,6 +25,7 @@ let cdpClient: CdpClient | null = null;
 let cdpTarget: CdpTarget | null = null;
 let fileWatcher: { dispose(): void } | null = null;
 let orbitTable: OrbitTable | null = null;
+let routeDeps: RouteDeps | null = null;
 let currentConfig: ParallelAgentConfig | null = null;
 
 // ── 激活入口 ──────────────────────────────────────────
@@ -79,46 +81,65 @@ async function startOrchestrator(
   const config = readConfig();
   currentConfig = config;
 
-  logger.info(`编排器启动中... CDP=${config.cdpPort} HTTP=${config.httpPort}`);
-
-  // 步骤 2: 发现 Work target 并连接 CDP
-  try {
-    const { client, target } = await discoverAndConnect(config.cdpPort);
-    cdpClient = client;
-    cdpTarget = target;
-    logger.audit('cdp_connect', { targetId: target.id, title: target.title });
-  } catch (e) {
-    logger.error(`CDP 连接失败: ${(e as Error).message}`);
-    vscode.window.showErrorMessage(
-      `ParallelAgent CDP 连接失败: ${(e as Error).message}\n` +
-        '请先运行"带调试端口重启 Trae"命令',
+  // 已在运行：只重试 CDP（修好端口后无需先停再启）
+  if (httpServer && routeDeps) {
+    logger.info('编排器已在运行，重试 CDP 连接...');
+    const connected = await connectCdp(config, routeDeps);
+    vscode.window.showInformationMessage(
+      connected
+        ? 'ParallelAgent 编排器已在运行，CDP 已连接'
+        : `ParallelAgent 编排器已在运行（HTTP 127.0.0.1:${config.httpPort}），CDP 仍不可达`,
     );
     return;
   }
 
-  // 步骤 4: 创建身份表
+  logger.info(`编排器启动中... CDP=${config.cdpPort} HTTP=${config.httpPort}`);
+
+  // 步骤 1: 数据面 + HTTP 网关先起——CDP 挂掉时 /health 仍须可诊断
   orbitTable = new OrbitTable(
     path.join(context.globalStorageUri.fsPath, 'orbit-table.json'),
   );
 
-  // 步骤 5: 创建文件信箱 watcher（A4：启动前幂等创建信箱目录骨架）
   const mailboxPaths = new MailboxPaths(config.mailboxRoot);
   ensureMailboxSkeleton(config.mailboxRoot);
   const watcher = new ReceiptWatcher(mailboxPaths, config.pollIntervalMs);
   fileWatcher = watcher;
 
-  // 步骤 4: 创建 HTTP 网关（注入 watcher + 项目名）
   const projectName =
     vscode.workspace.workspaceFolders?.[0]?.name ?? 'ParallelAgent';
-  httpServer = createHttpServer(config.httpPort, {
-    cdp: cdpClient,
-    orbit: orbitTable,
-    watcher,
-    projectName,
-  });
+  routeDeps = { cdp: null, orbit: orbitTable, watcher, projectName };
+  httpServer = createHttpServer(config.httpPort, routeDeps);
 
-  logger.info('编排器已启动');
-  vscode.window.showInformationMessage('ParallelAgent 编排器已启动');
+  // 步骤 2: 再连 CDP；失败只告警，HTTP 网关保持可用
+  const connected = await connectCdp(config, routeDeps);
+
+  if (connected) {
+    logger.info('编排器已启动');
+    vscode.window.showInformationMessage('ParallelAgent 编排器已启动');
+  } else {
+    vscode.window.showWarningMessage(
+      `ParallelAgent HTTP 网关已启动（127.0.0.1:${config.httpPort}），但 CDP ${config.cdpPort} 连接失败。` +
+        '运行"带调试端口重启 Trae"后，再次执行启动命令即可重试连接。',
+    );
+  }
+}
+
+/** 连接 CDP 并回填到共享 deps；成功后 HTTP 路由立即具备执行能力 */
+async function connectCdp(
+  config: ParallelAgentConfig,
+  deps: RouteDeps,
+): Promise<boolean> {
+  try {
+    const { client, target } = await discoverAndConnect(config.cdpPort);
+    cdpClient = client;
+    cdpTarget = target;
+    deps.cdp = client;
+    logger.audit('cdp_connect', { targetId: target.id, title: target.title });
+    return true;
+  } catch (e) {
+    logger.error(`CDP 连接失败: ${(e as Error).message}`);
+    return false;
+  }
 }
 
 async function stopOrchestrator(): Promise<void> {
@@ -135,6 +156,7 @@ async function stopOrchestrator(): Promise<void> {
   fileWatcher = null;
 
   orbitTable = null;
+  routeDeps = null;
   currentConfig = null;
 
   logger.info('编排器已停止');
@@ -252,7 +274,7 @@ function findRestartScript(context: vscode.ExtensionContext): string | null {
 /** A4：幂等创建项目层信箱骨架 + .gitignore（排除临时信号目录） */
 function ensureMailboxSkeleton(mailboxRoot: string): void {
   try {
-    for (const sub of ['转达', '回执', '交接手册', '信号']) {
+    for (const sub of ['转达', '回执', '就绪', '交接手册', '信号']) {
       fs.mkdirSync(path.join(mailboxRoot, sub), { recursive: true });
     }
     const gitignorePath = path.join(mailboxRoot, '.gitignore');

@@ -27,6 +27,16 @@ export class MailboxPaths {
     return path.join(this.root, '交接手册');
   }
 
+  /** 就绪/ */
+  get readyDir(): string {
+    return path.join(this.root, '就绪');
+  }
+
+  /** 就绪回执：就绪/T-X.md（启动/回到待命时由轨道写） */
+  readyFile(orbit: string): string {
+    return path.join(this.readyDir, `${orbit}.md`);
+  }
+
   /** 快照.md */
   get snapshotFile(): string {
     return path.join(this.root, '快照.md');
@@ -42,14 +52,24 @@ export class MailboxPaths {
     return path.join(this.root, '轨道启动手册.md');
   }
 
-  /** 转达单路径：转达/第N轮.md */
-  relayFile(round: number): string {
-    return path.join(this.relayDir, `第${round}轮.md`);
+  /** 转达轮次目录：转达/第N轮/ */
+  relayRoundDir(round: number): string {
+    return path.join(this.relayDir, `第${round}轮`);
   }
 
-  /** 回执路径：回执/T-X-第N轮.md（orbit 含 T- 前缀，如 "T-A"） */
-  receiptFile(orbit: string, round: number): string {
-    return path.join(this.receiptDir, `${orbit}-第${round}轮.md`);
+  /** 回执轮次目录：回执/第N轮/ */
+  receiptRoundDir(round: number): string {
+    return path.join(this.receiptDir, `第${round}轮`);
+  }
+
+  /** 转达单路径：转达/第N轮/T-X-v{M}.md（orbit 含 T- 前缀，如 "T-A"） */
+  relayFile(round: number, orbit: string, version: number): string {
+    return path.join(this.relayRoundDir(round), `${orbit}-v${version}.md`);
+  }
+
+  /** 回执路径：回执/第N轮/T-X-v{M}.md（与转达版本号对齐） */
+  receiptFile(round: number, orbit: string, version: number): string {
+    return path.join(this.receiptRoundDir(round), `${orbit}-v${version}.md`);
   }
 
   /** 信号文件路径 */

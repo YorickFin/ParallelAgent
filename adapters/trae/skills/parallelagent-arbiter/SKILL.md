@@ -33,6 +33,7 @@ description: "ParallelAgent 仲裁者。用户说'拆开跑/并行/分轨/开 N 
 4. 插件无脑：解析信号体执行动作，不判断、不记忆任务内容
 5. Skill 间松耦合：仲裁者与轨道互不知道对方存在，只认文件信箱约定
 6. fail-stop：找不到锚点 / 身份断言失败 → 立即停机告警，禁止盲点/盲发
+7. **单轨单在途消息**：同一轨上一条消息的完成信号未到，不得发下一条消息；转达单可提前落盘，但派发消息必须等就绪（细则见协议 §7.1）
 
 ---
 
@@ -152,8 +153,9 @@ description: "ParallelAgent 仲裁者。用户说'拆开跑/并行/分轨/开 N 
 > 详见 `../../shared/references/协议.md`（唯一源）。
 
 关键约定：
-- 转达单：仲裁者只写一次，各轨只读自己的 `→T-X` 节
-- 回执：各轨收工自写，文件出现 + mtime 即完成信号
+- 转达单：每轮一目录 `转达/第N轮/`，每轨一文件 `T-X-v{M}.md`；同轮可多次转达，M 从 1 递增，各轨只读自己的文件
+- 回执：各轨收工自写 `回执/第N轮/T-X-v{M}.md`，版本号与转达对齐；文件出现 + mtime 即完成信号
+- 就绪：各轨完成启动 / 回到待命时写 `就绪/T-X.md`；开轨后必须先等它就位才能派发（转达单不受此限，可提前写）
 - 契约块：嵌代码注释，裁决编号 `[#A.NNN]` 稳定引用
 - 快照：每批后回写（轨/状态/欠账/收回决策）
 - 交接手册：关键节点写，只含结构性结论
@@ -166,36 +168,68 @@ description: "ParallelAgent 仲裁者。用户说'拆开跑/并行/分轨/开 N 
 
 | Endpoint | 入参 | 出参 |
 |---|---|---|
-| `POST /dispatch` | `{轨:"T-A", 轮次:1, 模板:"dispatch_round"}` | `{ok, sid, sent_at}` |
+| `POST /dispatch` | `{轨:"T-A", 轮次:1, 版本:1, 模板:"dispatch_round"}` | `{ok, sid, sent_at}` |
 | `POST /new` | `{轨:"T-A", 模板:"new_track"}` | `{ok, sid, named_at}` |
-| `POST /watch` | `{轮次:1, 轨:["T-A","T-B"], timeout_s:1800}` | `{ok, 完成:[...], 未完成:[...]}` |
-| `GET /ping?sid=xxx` | — | `{状态:"running"/"idle", 任务名, sid}` |
+| `POST /wait-ready` | `{轨:["T-A"], since:<毫秒或ISO>, timeout_s:300}` | `{ok, since, 就绪:[...], 未就绪:[...]}` |
+| `POST /watch` | `{轮次:1, 版本:1, 轨:["T-A","T-B"], timeout_s:1800}` | `{ok, 轮次, 版本, 完成:[...], 未完成:[...]}` |
+| `GET /ping?sid=xxx` | — | `{ok, 状态:"running"/"idle", 任务名, sid}` |
 | `POST /delete` | `{sid}` | `{ok}` |
 | `GET /health` | — | `{cdp_alive, 轨表}` |
 
 **话术模板标识**（插件内置，不入参任务内容）：
 - `new_track`：读手册 .parallel-agent/轨道启动手册.md，你是 T-X，待命
-- `dispatch_round`：读转达第 {N} 轮你的 →{T-X} 节，执行，写回执
+- `dispatch_round`：读 .parallel-agent/转达/第{N}轮/T-X-v{M}.md，执行，写 .parallel-agent/回执/第{N}轮/T-X-v{M}.md
 - `cancel_standby`：本轮无 T-X 任务，待命
 - `arbiter_ii`：读交接手册第 N 版，你是仲裁者 II 世，承接 T-A/B/C 收尾
 - `track_ii`：读交接手册第 N 版，你是 T-X II 世，承接 T-X 身份
 
-**调用示例**（dispatch 一轮）：
+**版本规则**：同一轮对同一轨反复派发时 `版本` 从 1 递增（v1、v2、…），每次写入新的 `T-X-v{M}.md`，不覆盖历史；`/watch` 的 `版本` 必须与 `/dispatch` 一致。
+
+**调用示例一（开轨握手：写转达单 → new → 等就绪 → dispatch）**：
 ```javascript
-// 1. 派发
+const since = Date.now(); // 记录发送前时点，用于过滤历史就绪文件
+
+// 1. 先落盘转达单（允许在 /new 之前写，写文件不会触发轨道）
+//    .parallel-agent/转达/第1轮/T-A-v1.md
+
+// 2. 新建轨，只发待命话术
+await fetch('http://127.0.0.1:9318/new', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ 轨: 'T-A', 模板: 'new_track' })
+});
+
+// 3. 阻塞等待就绪回执
+const ready = await (await fetch('http://127.0.0.1:9318/wait-ready', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ 轨: ['T-A'], since, timeout_s: 300 })
+})).json();
+if (ready.未就绪.length > 0) throw new Error('轨道未就绪，停止派发');
+
+// 4. 就绪后才派发
+```
+
+**调用示例二（派发一轮）**：
+```javascript
+// 1. 派发（话术由插件按模板生成，不传任务内容）
 await fetch('http://127.0.0.1:9318/dispatch', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({ 轨: 'T-A', 轮次: 1, 模板: 'dispatch_round' })
+  body: JSON.stringify({ 轨: 'T-A', 轮次: 1, 版本: 1, 模板: 'dispatch_round' })
 });
 
 // 2. 监听回执
 const result = await (await fetch('http://127.0.0.1:9318/watch', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({ 轮次: 1, 轨: ['T-A','T-B','T-C'], timeout_s: 1800 })
+  body: JSON.stringify({ 轮次: 1, 版本: 1, 轨: ['T-A','T-B','T-C'], timeout_s: 1800 })
 })).json();
 ```
+
+**禁止连发**：同一轨上一条消息的完成信号未到，不得发下一条消息。`/new` 与 `/dispatch` 不得连续调用，`/dispatch` 必须等 `/wait-ready` 返回该轨就绪。
+
+**转达单可以提前落盘**：写文件是数据面动作，不是触发器；派发消息才是。轨道启动期不读 `转达/`，执行期只读消息指定的版本文件，因此提前落盘（包括在 `/new` 之前写好第 1 轮转达单）是安全且更高效的。唯一硬约束是「消息等就绪」。细则见协议 §7.1。
 
 ---
 
@@ -203,7 +237,7 @@ const result = await (await fetch('http://127.0.0.1:9318/watch', {
 
 读回执后，仲裁者独立实检（不采信转述）：
 
-1. **读回执文件**：`.parallel-agent/回执/T-X-第N轮.md`
+1. **读回执文件**：`.parallel-agent/回执/第N轮/T-X-v{M}.md`
 2. **验证证据**：打开证据中引用的文件/行号，确认改动存在
 3. **验证边界**：确认改动未越界（只在 T-X 文件领地内）
 4. **验证自检字段**：错误率/健康度/建议是否合理
@@ -252,8 +286,11 @@ const result = await (await fetch('http://127.0.0.1:9318/watch', {
 ```
 用户："拆开跑"
    → 仲裁者评估（§4）→ 输出决策建议
-   → 用户确认 → 写转达/第1轮.md
-   → fetch POST /dispatch（各轨）
+   → 用户确认
+   → 写转达/第1轮/T-{A,B,C}-v1.md（每轨一份，首部含收尾判据；可提前落盘）
+   → 记 since → fetch POST /new（各轨，只发待命话术）
+   → fetch POST /wait-ready（阻塞等 就绪/T-X.md，未就绪则停止）
+   → 就绪后 fetch POST /dispatch（各轨）
    → fetch POST /watch（阻塞等回执）
    → 回执到齐 → 独立实检 → 写快照
    → 每轮：自检报告 + 收回评估

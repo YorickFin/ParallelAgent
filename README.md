@@ -57,6 +57,14 @@ adapters/
 
 一期（手动触发版）：**已实现并联调通过**。编排器插件覆盖 /health、/new、/ping、/dispatch、/watch、/delete 全流程，多轨并行切换、建轨与删轨的端到端链路均已实测验证。
 
+v1.1.0 新增：版本化信箱（`转达/第N轮/T-X-v{M}.md`）、开轨就绪握手（`就绪/T-X.md` + `POST /wait-ready`）、单轨单在途消息纪律。
+
+## 测试验证项目
+
+[v1.1.0 测试验证项目：slate-desktop](https://github.com/YorickFin/slate-desktop)
+
+一个 pywebview + Vite 前端 + Python 后端的桌面应用，用于在真实多轨开发场景中验证 v1.1.0 的版本化信箱、就绪握手与多轨并行调度。
+
 ## License
 
 [Apache License 2.0](LICENSE)
