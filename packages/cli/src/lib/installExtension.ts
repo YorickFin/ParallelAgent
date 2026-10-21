@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /**
- * 扩展安装：Open VSX 主通道 + GitHub Release / VS Marketplace 双兜底
+ * 扩展安装：Open VSX 主通道 + GitHub Release 兜底
  */
 
 import { execFileSync } from 'node:child_process';
@@ -38,11 +38,6 @@ export function compareVersions(a: string, b: string): number {
     if (d !== 0) return d > 0 ? 1 : -1;
   }
   return 0;
-}
-
-function marketplaceVsixUrl(): string {
-  const [publisher, name] = EXTENSION_ID.split('.');
-  return `https://marketplace.visualstudio.com/_apis/public/gallery/publishers/${publisher}/vsextensions/${name}/latest/vspackage`;
 }
 
 function run(cmd: string, args: string[]): { ok: boolean; output: string } {
@@ -89,18 +84,11 @@ async function downloadAndInstall(
   }
 }
 
-/** 兜底一：从 GitHub Release 下载 .vsix 到 %TEMP%，再本地安装 */
+/** 兜底：从 GitHub Release 下载 .vsix 到 %TEMP%，再本地安装 */
 export async function installFromGithubRelease(
   cliCommand: string,
 ): Promise<{ ok: boolean; output: string }> {
   return downloadAndInstall(RELEASE_LATEST_URL, 'GitHub Release', cliCommand);
-}
-
-/** 兜底二：从 VS Marketplace gallery 下载 latest .vsix，再本地安装 */
-export async function installFromMarketplace(
-  cliCommand: string,
-): Promise<{ ok: boolean; output: string }> {
-  return downloadAndInstall(marketplaceVsixUrl(), 'VS Marketplace', cliCommand);
 }
 
 /** 查询已安装扩展版本（无则返回 null） */

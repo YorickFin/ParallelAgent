@@ -9,7 +9,6 @@ import { ensureRemoteDebuggingPort } from '../lib/argvJson.js';
 import {
   installFromOpenVsx,
   installFromGithubRelease,
-  installFromMarketplace,
   isExtensionInstalled,
   getInstalledExtensionVersion,
   compareVersions,
@@ -63,7 +62,6 @@ export async function runInit(options: InitOptions): Promise<void> {
     dry(`目标扩展版本: ${EXPECTED_EXTENSION_VERSION ?? '未知（跳过版本校验）'}`);
     dry(`trae --install-extension yorickfin.parallelagent-orchestrator（Open VSX）`);
     dry(`└─ 版本未达目标则下载 GitHub Release .vsix 重装`);
-    dry(`└─ 仍失败则下载 VS Marketplace .vsix 重装`);
   } else {
     const expected = EXPECTED_EXTENSION_VERSION;
     const installed = isExtensionInstalled(cliCommand)
@@ -91,17 +89,13 @@ export async function runInit(options: InitOptions): Promise<void> {
         console.log('  Open VSX 版本未达目标（可能仍在审核），尝试 GitHub Release 兜底...');
         extResult = await installFromGithubRelease(cliCommand);
       }
-      if (!extResult.ok || !versionOk()) {
-        console.log('  GitHub Release 兜底未达目标，尝试 VS Marketplace 兜底...');
-        extResult = await installFromMarketplace(cliCommand);
-      }
       if (!extResult.ok) fail(`扩展安装失败:\n${extResult.output}`);
 
       const finalVersion = getInstalledExtensionVersion(cliCommand);
       if (finalVersion && expected && compareVersions(finalVersion, expected) < 0) {
         fail(
           `扩展版本仍为 ${finalVersion}，目标 ${expected}` +
-            '\n请确认 Open VSX / VS Marketplace 审核状态，或 GitHub Release 是否已上传对应 vsix。',
+            '\n请确认 Open VSX 审核状态，或 GitHub Release 是否已上传对应 vsix。',
         );
       }
       console.log(`  ✓ 扩展已安装 ${finalVersion ?? ''}`.trim());

@@ -27,9 +27,9 @@ ParallelAgent 是一套在 Trae Work / VSCode-like IDE 中实现**多 AI 会话�
 npx parallelagent@latest init
 ```
 
-一条命令完成：安装编排器扩展（Open VSX → GitHub Release → VS Marketplace 三级兜底，并校验扩展版本）→ 铺两个全局 Skill 到 `~/.trae-cn/skills/` → 向 `~/.trae-cn/argv.json` 增量写入调试端口 9317。
+一条命令完成：安装编排器扩展（Open VSX，版本未达目标时自动改用 GitHub Release 的 `.vsix`）→ 铺两个全局 Skill 到 `~/.trae-cn/skills/` → 向 `~/.trae-cn/argv.json` 增量写入调试端口 9317。
 
-> Open VSX / Marketplace 审核期间，CLI 发现商店版本低于目标版本时会自动改用 GitHub Release 的 `.vsix`，无需手动干预。
+> Open VSX 审核期间，CLI 发现商店版本低于目标版本时会自动改用 GitHub Release，无需手动干预。
 
 之后每次启动 Trae（双击图标 / 开始菜单 / 任务栏均可），调试端口自动就绪。在 Trae 中 `Ctrl+Shift+P → ParallelAgent: 启动编排器` 进入工作流。
 
