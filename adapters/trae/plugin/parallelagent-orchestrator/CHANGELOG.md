@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.1.1
+
+- 版本对齐到 1.1.1，与 CLI 同步发布；扩展代码无变更
+- 安装链路不再包含 VS Marketplace 兜底（Open VSX → GitHub Release）
+
 ## 1.1.0
 
 - 新增就绪握手：轨道启动完成后写 `就绪/T-X.md`，仲裁者用 `POST /wait-ready` 阻塞等待，杜绝「待命轨误读转达单」
