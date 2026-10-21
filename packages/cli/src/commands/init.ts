@@ -9,7 +9,11 @@ import { ensureRemoteDebuggingPort } from '../lib/argvJson.js';
 import {
   installFromOpenVsx,
   installFromGithubRelease,
+  installFromMarketplace,
   isExtensionInstalled,
+  getInstalledExtensionVersion,
+  compareVersions,
+  EXPECTED_EXTENSION_VERSION,
 } from '../lib/installExtension.js';
 import { installSkills } from '../lib/installSkills.js';
 import { pingCdp, missingSkills } from '../lib/verify.js';
@@ -55,21 +59,53 @@ export async function runInit(options: InitOptions): Promise<void> {
   console.log('');
   console.log('步骤 2/5: 安装扩展');
 
-  if (!isExtensionInstalled(cliCommand)) {
-    if (dryRun) {
-      dry(`trae --install-extension yorickfin.parallelagent-orchestrator（Open VSX）`);
-      dry(`└─ 失败则下载 GitHub Release .vsix 再本地安装`);
+  if (dryRun) {
+    dry(`目标扩展版本: ${EXPECTED_EXTENSION_VERSION ?? '未知（跳过版本校验）'}`);
+    dry(`trae --install-extension yorickfin.parallelagent-orchestrator（Open VSX）`);
+    dry(`└─ 版本未达目标则下载 GitHub Release .vsix 重装`);
+    dry(`└─ 仍失败则下载 VS Marketplace .vsix 重装`);
+  } else {
+    const expected = EXPECTED_EXTENSION_VERSION;
+    const installed = isExtensionInstalled(cliCommand)
+      ? getInstalledExtensionVersion(cliCommand)
+      : null;
+
+    const satisfied =
+      !!installed && (!expected || compareVersions(installed, expected) >= 0);
+
+    if (satisfied) {
+      console.log(`  ✓ 扩展已安装 ${installed}（跳过）`);
     } else {
+      if (installed) {
+        console.log(`  已安装 ${installed}，目标 ${expected ?? 'latest'}，尝试升级...`);
+      }
+
+      const versionOk = (): boolean => {
+        if (!expected) return true;
+        const now = getInstalledExtensionVersion(cliCommand);
+        return !!now && compareVersions(now, expected) >= 0;
+      };
+
       let extResult = installFromOpenVsx(cliCommand);
-      if (!extResult.ok) {
-        console.log('  Open VSX 安装失败，尝试 GitHub Release 兜底...');
+      if (!extResult.ok || !versionOk()) {
+        console.log('  Open VSX 版本未达目标（可能仍在审核），尝试 GitHub Release 兜底...');
         extResult = await installFromGithubRelease(cliCommand);
       }
+      if (!extResult.ok || !versionOk()) {
+        console.log('  GitHub Release 兜底未达目标，尝试 VS Marketplace 兜底...');
+        extResult = await installFromMarketplace(cliCommand);
+      }
       if (!extResult.ok) fail(`扩展安装失败:\n${extResult.output}`);
-      console.log('  ✓ 扩展已安装');
+
+      const finalVersion = getInstalledExtensionVersion(cliCommand);
+      if (finalVersion && expected && compareVersions(finalVersion, expected) < 0) {
+        fail(
+          `扩展版本仍为 ${finalVersion}，目标 ${expected}` +
+            '\n请确认 Open VSX / VS Marketplace 审核状态，或 GitHub Release 是否已上传对应 vsix。',
+        );
+      }
+      console.log(`  ✓ 扩展已安装 ${finalVersion ?? ''}`.trim());
     }
-  } else {
-    console.log('  ✓ 扩展已安装（跳过）');
   }
 
   // ── 3. 铺 skills ──

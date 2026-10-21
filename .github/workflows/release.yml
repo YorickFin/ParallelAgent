@@ -1,12 +1,13 @@
 # Copyright 2026 ParallelAgent Contributors
 # SPDX-License-Identifier: Apache-2.0
 
-# 发布流程：打 v* tag 触发 → 打包 vsix → GitHub Release → Open VSX → npm
+# 发布流程：打 v* tag 触发 → 打包 vsix → GitHub Release → Open VSX / VS Marketplace → npm
 #
 # 无长期密钥：
 #   - Open VSX:    GitHub OIDC Trusted Publisher + npx ovsx publish --trusted-publishing
 #   - npm:         GitHub OIDC Trusted Publisher + npm publish --provenance
 #   - GitHub 自带 GH_TOKEN 处理 release upload
+#   - VS Marketplace: 需要仓库 secret VSCE_PAT（未配置则自动跳过该 job 的发布步骤）
 #
 # 首次发布历史（已完成）：
 #   - parallelagent@0.1.0 本地 npm publish（因为 npm 不允许 Trusted Publisher 绑到不存在的包名）
@@ -77,6 +78,26 @@ jobs:
         with:
           node-version: 20
       - run: npx ovsx publish ./parallelagent-orchestrator.vsix
+
+  publish-marketplace:
+    needs: package-extension
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: parallelagent-orchestrator-vsix
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Publish to VS Marketplace
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        run: |
+          if [ -z "$VSCE_PAT" ]; then
+            echo "VSCE_PAT 未配置，跳过 VS Marketplace 发布"
+            exit 0
+          fi
+          npx @vscode/vsce publish --packagePath ./parallelagent-orchestrator.vsix -p "$VSCE_PAT"
 
   publish-cli:
     runs-on: ubuntu-latest
