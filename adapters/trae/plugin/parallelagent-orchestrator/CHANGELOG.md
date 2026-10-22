@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.1.3
+
+- 打包内新增 `README.md` 与 `LICENSE`，Marketplace / Open VSX 可展示 Overview
+- 版本与 CLI 同步到 1.1.3；扩展逻辑无变更
+
 ## 1.1.2
 
 - 修复 CLI 在 Windows 上无法启动 Trae CLI（`.cmd` 需经 shell、`where` 需优先取 `.cmd`）
