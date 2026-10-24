@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.2.5
+
+- 修复直连 exe 偶发 `spawnSync ... EACCES`（杀软/占用导致的瞬时拒绝拉起）直接中断安装：现在会重试 3 次（间隔 0.8s / 1.6s），仍失败则自动回退 `.cmd` 经 shell 调用
+- 网络请求增加重试：Open VSX 查询/下载与 GitHub Release 下载在代理/TUN 环境下偶发 `fetch failed`，现重试 3 次再判失败
+- 失败输出新增 `code=`（如 EACCES / FETCH_FAILED），便于区分「进程起不来」与「网络不通」
+- 扩展代码无变更，版本与 CLI 对齐
+
 ## 1.2.4
 
 - 调用链路去掉 `cmd.exe` 与 `trae-cn.cmd` 批处理层：CLI 直接以 `ELECTRON_RUN_AS_NODE=1` 启动 `Trae CN.exe` 并运行 `resources/app/out/cli.js`；探测不到 `cli.js` 时才回退 `.cmd` 经 shell 调用
