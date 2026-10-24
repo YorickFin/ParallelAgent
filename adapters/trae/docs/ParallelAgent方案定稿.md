@@ -357,7 +357,7 @@
 | `POST /dispatch` | `{轨: "T-A", 轮次: 1, 版本: 1, 话术文件指针}` | `{ok, sid, sent_at}` | CDP 切到 T-A → 身份断言 → 注入话术 → 发送 |
 | `POST /new` | `{轨: "T-A", 手册文件指针}` | `{ok, sid, named_at}` | CDP 新建任务 → 注入首条消息 → 发送 → 落身份表 |
 | `POST /wait-ready` | `{轨:["T-A"], since, timeout_s:300}` | `{ok, 就绪:[...], 未就绪:[...]}` | 阻塞等待就绪回执（开轨握手用，允许阻塞） |
-| `POST /watch` | `{轮次, 版本, 轨:[...], timeout_s?, notify?}` | `{ok, job_id, 状态文件}` | **提交后台 job 并立即返回**（v1.2.0 起不再阻塞） |
+| `POST /watch` | `{轮次, 版本, 轨:[...], timeout_s?, notify?}` | `{ok, job_id, 状态文件, 复用, 警告}` | **提交后台 job 并立即返回**（v1.2.0 不再阻塞）；同轮次版本幂等复用 |
 | `GET /watch/status` | `?job=` | `{ok, job状态, 轨道, 待处理, 未完成}` | 只读查询待处理队列 |
 | `POST /watch/ack` | `{job, 轨}` | `{ok, 剩余待处理, 未完成, 全部已处理}` | 标记该轨已消费，带回剩余队列 |
 | `POST /watch/cancel` | `{job}` | `{ok}` | 取消 job 并清理 |
@@ -379,6 +379,7 @@
 4. 仲裁者处理完一轨 → `POST /watch/ack` → 响应带回剩余队列；非空则同一回合继续消费，为空则结束回合。
 5. 空闲探测三级：`status()` 读当前会话（L0）→ 任务行运行图标排除（L1，**图标仅在会话未选中时显示**）→ `status()` 二次确认（L2，仅注入前）。
 6. 超时/失败立即入队并按告警话术通知；多轨同 tick 完成做合并窗口，避免通知风暴。
+7. **多轮并存**：不同轨可处于不同轮次，按「每轮一个 job」拆分；各 job 的状态文件独立，同轮次版本重复提交幂等复用。仲裁者被唤醒后先 `GET /watch/jobs` 拉全量，再逐 job 逐条 ack。
 
 完整设计见 `ParallelAgent-v1.2.0设计文档.md`。
 
@@ -577,8 +578,8 @@ length [{"min": Number(1), "value": String("")}]
 - **取消待命**：`本轮无 T-X 任务，待命`
 - **第二任仲裁者启动**：`读交接手册第 N 版 .parallel-agent/交接手册/第N版-*.md，你是仲裁者 II 世，承接 T-A/B/C 收尾`
 - **第二任分轨启动**：`读交接手册第 N 版 .parallel-agent/交接手册/第N版-*.md，你是 T-X II 世，承接 T-X 身份`
-- **回执待处理通知**：`读 .parallel-agent/信号/轮次状态/第{N}轮-v{M}.json（job {ID}），有待处理回执；处理完用 POST /watch/ack 标记`
-- **超时/失败告警**：`读 .parallel-agent/信号/轮次状态/第{N}轮-v{M}.json（job {ID}），有轨超时或失败，优先处理`
+- **回执待处理通知**：`读 .parallel-agent/信号/轮次状态/ 下的待处理状态文件（当前 job {ID}），可用 GET /watch/jobs 查看全部；处理完用 POST /watch/ack 标记`
+- **超时/失败告警**：`读 .parallel-agent/信号/轮次状态/ 下的待处理状态文件（当前 job {ID}），有轨超时或失败，优先处理；可用 GET /watch/jobs 查看全部`
 
 ---
 

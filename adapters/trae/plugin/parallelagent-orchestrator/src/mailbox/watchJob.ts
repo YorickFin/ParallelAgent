@@ -85,6 +85,14 @@ const RETRY_AFTER_S = 120;
 /** 稳定的回执判定次数（对应 watcher 的 awaitWriteFinish） */
 const STABLE_COUNT = 2;
 
+export interface SubmitResult {
+  state: RoundState;
+  /** true = 同 (轮次, 版本) 已有 running job，本次直接复用 */
+  复用: boolean;
+  /** 信号级警告：缺轨、同轨跨 job 未清账等 */
+  警告: string[];
+}
+
 export class WatchJobManager {
   private readonly jobs = new Map<string, JobRuntime>();
   private timer: ReturnType<typeof setInterval> | null = null;
@@ -120,7 +128,37 @@ export class WatchJobManager {
     timeout_s?: number;
     notify?: NotifyMode;
     仲裁者?: string | null;
-  }): RoundState {
+  }): SubmitResult {
+    // 1. 同 (轮次, 版本) 已有 running job → 复用，避免覆盖同一个状态文件
+    const existing = this.findRunning(input.轮次, input.版本);
+    if (existing) {
+      const missing = input.轨.filter((o) => !existing.state.轨道[o]);
+      const warnings: string[] = [];
+      if (missing.length > 0) {
+        warnings.push(
+          `job ${existing.state.job} 已覆盖第${input.轮次}轮 v${input.版本}，但缺少轨 ${missing.join('/')}；请用新的版本号重新提交`,
+        );
+      }
+      logger.info(
+        `复用已有 job ${existing.state.job}（第${input.轮次}轮 v${input.版本}）`,
+      );
+      return { state: existing.state, 复用: true, 警告: warnings };
+    }
+
+    // 2. 单轨单在途的延伸：同一轨不应同时挂在两个未清账的 job 上（只警告，不阻塞）
+    const warnings: string[] = [];
+    for (const job of this.jobs.values()) {
+      if (job.state.job状态 !== 'running') continue;
+      for (const orbit of input.轨) {
+        const entry = job.state.轨道[orbit];
+        if (entry && entry.处理 !== 'done') {
+          warnings.push(
+            `${orbit} 仍在 job ${job.state.job}（第${job.state.轮次}轮 v${job.state.版本}）未清账`,
+          );
+        }
+      }
+    }
+
     const now = new Date();
     const state: RoundState = {
       job: newJobId(),
@@ -167,8 +205,23 @@ export class WatchJobManager {
       版本: state.版本,
       轨: input.轨,
       notify: state.notify,
+      警告: warnings,
     });
-    return state;
+    return { state, 复用: false, 警告: warnings };
+  }
+
+  /** 查找同 (轮次, 版本) 仍在运行的 job */
+  private findRunning(轮次: number, 版本: number): JobRuntime | undefined {
+    for (const job of this.jobs.values()) {
+      if (
+        job.state.job状态 === 'running' &&
+        job.state.轮次 === 轮次 &&
+        job.state.版本 === 版本
+      ) {
+        return job;
+      }
+    }
+    return undefined;
   }
 
   get(jobId: string): RoundState | null {

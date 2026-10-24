@@ -55,9 +55,9 @@ export function buildPhrase(
     case 'track_ii':
       return `读交接手册第${params.手册版本}版 .parallel-agent/交接手册/第${params.手册版本}版-*.md，你是 ${params.轨} II 世，承接 ${params.轨} 身份`;
     case 'watch_notify':
-      return `读 .parallel-agent/信号/轮次状态/第${params.轮次}轮-v${params.版本 ?? 1}.json（job ${params.job}），有待处理回执；处理完用 POST /watch/ack 标记`;
+      return `读 .parallel-agent/信号/轮次状态/ 下的待处理状态文件（当前 job ${params.job}），可用 GET /watch/jobs 查看全部；处理完用 POST /watch/ack 标记`;
     case 'watch_alert':
-      return `读 .parallel-agent/信号/轮次状态/第${params.轮次}轮-v${params.版本 ?? 1}.json（job ${params.job}），有轨超时或失败，优先处理`;
+      return `读 .parallel-agent/信号/轮次状态/ 下的待处理状态文件（当前 job ${params.job}），有轨超时或失败，优先处理；可用 GET /watch/jobs 查看全部`;
   }
 }
 
@@ -408,7 +408,7 @@ async function handleWatchSubmit(
   }
 
   const notify = body.notify === 'all' ? 'all' : 'each';
-  const state = deps.jobs.submit({
+  const result = deps.jobs.submit({
     轮次: body.轮次,
     版本: version,
     轨: body.轨,
@@ -419,11 +419,14 @@ async function handleWatchSubmit(
 
   return {
     ok: true,
-    job_id: state.job,
-    轮次: state.轮次,
-    版本: state.版本,
-    notify: state.notify,
-    状态文件: `信号/轮次状态/第${state.轮次}轮-v${state.版本}.json`,
+    job_id: result.state.job,
+    轮次: result.state.轮次,
+    版本: result.state.版本,
+    notify: result.state.notify,
+    状态文件: `信号/轮次状态/第${result.state.轮次}轮-v${result.state.版本}.json`,
+    /** true = 同轮次版本已有 job，本次复用（未新建） */
+    复用: result.复用,
+    警告: result.警告,
   };
 }
 
@@ -488,20 +491,27 @@ async function handleWatchJobs(
   }
   return {
     ok: true,
-    jobs: deps.jobs.list().map((s) => ({
-      job: s.job,
-      轮次: s.轮次,
-      版本: s.版本,
-      job状态: s.job状态,
-      notify: s.notify,
-      创建于: s.创建于,
-      轨道: Object.fromEntries(
-        Object.entries(s.轨道).map(([k, v]) => [
-          k,
-          { 状态: v.状态, 处理: v.处理 },
-        ]),
-      ),
-    })),
+    jobs: deps.jobs.list().map((s) => {
+      const entries = Object.entries(s.轨道);
+      const 待处理 = entries
+        .filter(([, v]) => v.处理 === 'pending' || v.处理 === 'notified')
+        .map(([k]) => k);
+      return {
+        job: s.job,
+        轮次: s.轮次,
+        版本: s.版本,
+        job状态: s.job状态,
+        notify: s.notify,
+        创建于: s.创建于,
+        待处理,
+        轨道: Object.fromEntries(
+          entries.map(([k, v]) => [
+            k,
+            { 状态: v.状态, 处理: v.处理, 回执: v.回执 },
+          ]),
+        ),
+      };
+    }),
   };
 }
 
