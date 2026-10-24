@@ -46,7 +46,11 @@ export const ANCHOR_TASK_MORE_BTN =
 export const ANCHOR_MENU_ITEM =
   '.task-list-menu-item';
 
-/** 运行态图标 */
+/**
+ * 运行态图标。
+ * 注意：该图标仅在会话「未被选中」时显示；切进该会话后即隐藏，
+ * 因此「无图标」不能作为空闲依据，只能作为「忙」的排除条件。
+ */
 export const ANCHOR_RUNNING_ICON =
   '.taskStatusIcon .session-status-icon-progress svg.trae-icon-TaskState_running';
 

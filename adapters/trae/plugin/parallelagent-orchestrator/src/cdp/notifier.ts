@@ -54,26 +54,32 @@ export class Notifier {
     }
 
     try {
-      // L1：无侵入预筛——任务行有运行图标就直接跳过，不切会话
-      const l1 = await rowRunningState(client, arbiterSid);
-      if (l1 === 'no-row') {
-        this.writeAlert(req, 'arbiter_sid_not_found');
-        logger.warn(`通知失败：仲裁者会话 ${arbiterSid} 不在任务列表中`);
-        return 'failed';
-      }
-      if (l1 === 'running') {
-        logger.debug(`通知跳过：仲裁者 ${arbiterSid} 正在运行（任务行图标）`);
-        return 'skipped';
-      }
-
-      // 记录用户当前会话，注入后切回，减少打扰
+      // 当前选中会话 + 发送按钮状态：零侵入，一次 JS 调用
+      // 注意：任务行的 running 图标只在「未选中」时显示，选中时恒为隐藏，
+      // 所以 L1 只能证明「忙」，不能证明「空闲」；若仲裁者恰是当前会话，
+      // 直接用这里的 state 判断，避免为了探测而反复切轨。
       const before = await actions.status(client);
+      let state = before;
 
-      // L2：切到仲裁者做最终确认
-      await actions.navigateTo(client, arbiterSid);
-      await actions.assertIdentity(client, arbiterSid);
+      if (before.sid !== arbiterSid) {
+        // L1：无侵入预筛——任务行有运行图标就直接跳过，不切会话
+        const l1 = await rowRunningState(client, arbiterSid);
+        if (l1 === 'no-row') {
+          this.writeAlert(req, 'arbiter_sid_not_found');
+          logger.warn(`通知失败：仲裁者会话 ${arbiterSid} 不在任务列表中`);
+          return 'failed';
+        }
+        if (l1 === 'running') {
+          logger.debug(`通知跳过：仲裁者 ${arbiterSid} 正在运行（任务行图标）`);
+          return 'skipped';
+        }
 
-      const state = await actions.status(client);
+        // L2：切到仲裁者做最终确认（L1 的「无图标」只代表疑似空闲）
+        await actions.navigateTo(client, arbiterSid);
+        await actions.assertIdentity(client, arbiterSid);
+        state = await actions.status(client);
+      }
+
       if (state.state !== 'idle') {
         logger.debug(`通知跳过：仲裁者状态 ${state.state}`);
         return 'skipped';
