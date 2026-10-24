@@ -10,6 +10,8 @@ import {
   installFromOpenVsx,
   installFromStore,
   installFromGithubRelease,
+  installFromVsixFile,
+  waitForVersion,
   isExtensionInstalled,
   getInstalledExtensionVersion,
   compareVersions,
@@ -25,6 +27,13 @@ interface InitOptions {
   traeCli?: string;
   /** 额外尝试让 Trae 从自己的商店源安装（默认关闭） */
   fromStore?: boolean;
+  /** 离线安装：直接指定本地 vsix，跳过所有网络请求 */
+  vsixPath?: string;
+}
+
+/** 取输出的第一行，用于错误摘要 */
+function firstLine(text: string): string {
+  return text.split(/\r?\n/).map((l) => l.trim()).find(Boolean) ?? '未知错误';
 }
 
 /** 打印将要执行的动作（dry-run 模式） */
@@ -33,7 +42,7 @@ function dry(label: string): void {
 }
 
 export async function runInit(options: InitOptions): Promise<void> {
-  const { dryRun, traeCli, fromStore = false } = options;
+  const { dryRun, traeCli, fromStore = false, vsixPath } = options;
 
   // ── 1. 探测 ──
   if (dryRun) dry('探测 Trae 安装位置、数据目录、CLI 命令');
@@ -63,9 +72,14 @@ export async function runInit(options: InitOptions): Promise<void> {
 
   if (dryRun) {
     dry(`目标扩展版本: ${EXPECTED_EXTENSION_VERSION ?? '未知（跳过版本校验）'}`);
-    dry(`从 Open VSX 下载对应版本 vsix 后本地安装`);
-    dry(`└─ Open VSX 未达版本则回退 GitHub Release .vsix`);
-    if (fromStore) dry(`└─ 仍失败则尝试 Trae 商店安装`);
+    if (vsixPath) {
+      dry(`离线安装本地 vsix: ${vsixPath}`);
+    } else {
+      dry(`从 Open VSX 下载对应版本 vsix 后本地安装`);
+      dry(`└─ 失败则回退 GitHub Release .vsix`);
+      if (fromStore) dry(`└─ 仍失败则尝试 Trae 商店安装`);
+    }
+    dry(`安装后轮询等待版本达标（最多 30 秒，Trae 运行时安装是异步的）`);
   } else {
     const expected = EXPECTED_EXTENSION_VERSION;
     const installed = isExtensionInstalled(cliCommand)
@@ -82,34 +96,64 @@ export async function runInit(options: InitOptions): Promise<void> {
         console.log(`  已安装 ${installed}，目标 ${expected ?? 'latest'}，尝试升级...`);
       }
 
-      const versionOk = (): boolean => {
-        if (!expected) return true;
-        const now = getInstalledExtensionVersion(cliCommand);
-        return !!now && compareVersions(now, expected) >= 0;
+      type Attempt = {
+        label: string;
+        run: () =>
+          | { ok: boolean; output: string }
+          | Promise<{ ok: boolean; output: string }>;
       };
 
-      // 主通道：Open VSX 直链下载 vsix，本地安装（不依赖 Trae 的商店源）
-      let extResult = await installFromOpenVsx(cliCommand, expected ?? undefined);
-      if (!extResult.ok || !versionOk()) {
-        console.log('  Open VSX 未取得目标版本，尝试 GitHub Release 兜底...');
-        extResult = await installFromGithubRelease(cliCommand);
-      }
-      if ((!extResult.ok || !versionOk()) && fromStore) {
-        console.log('  仍失败，尝试 Trae 商店安装（--from-store）...');
-        extResult = installFromStore(cliCommand);
-      }
-      if (!extResult.ok && !versionOk()) {
-        fail(`扩展安装失败:\n${extResult.output}`);
+      const attempts: Attempt[] = [];
+      if (vsixPath) {
+        attempts.push({
+          label: `本地 vsix（${vsixPath}）`,
+          run: () => installFromVsixFile(vsixPath, cliCommand),
+        });
+      } else {
+        attempts.push({
+          label: 'Open VSX',
+          run: () => installFromOpenVsx(cliCommand, expected ?? undefined),
+        });
+        attempts.push({
+          label: 'GitHub Release',
+          run: () => installFromGithubRelease(cliCommand),
+        });
+        if (fromStore) {
+          attempts.push({
+            label: 'Trae 商店',
+            run: () => installFromStore(cliCommand),
+          });
+        }
       }
 
-      const finalVersion = getInstalledExtensionVersion(cliCommand);
-      if (finalVersion && expected && compareVersions(finalVersion, expected) < 0) {
+      let finalVersion: string | null = null;
+      let lastError = '';
+      for (const attempt of attempts) {
+        console.log(`  尝试 ${attempt.label}...`);
+        const r = await attempt.run();
+        if (!r.ok) {
+          lastError = r.output;
+          console.log(`  ✗ ${attempt.label} 失败: ${firstLine(r.output)}`);
+          continue;
+        }
+        // 安装命令返回后 Trae 可能仍在异步写入，必须轮询等待版本变化
+        const v = await waitForVersion(cliCommand, expected, 30_000);
+        if (v && (!expected || compareVersions(v, expected) >= 0)) {
+          finalVersion = v;
+          break;
+        }
+        lastError = `安装后版本仍为 ${v ?? '未知'}（等待 30 秒超时）`;
+        console.log(`  ⚠ ${attempt.label}: ${lastError}`);
+      }
+
+      if (!finalVersion) {
         fail(
-          `扩展版本仍为 ${finalVersion}，目标 ${expected}` +
-            '\n请确认 Open VSX 审核状态，或 GitHub Release 是否已上传对应 vsix。',
+          '扩展安装失败。\n' +
+            `最后错误: ${lastError}\n` +
+            '可手动下载 vsix 后用 --vsix <路径> 离线安装；网络抖动时也可直接重试。',
         );
       }
-      console.log(`  ✓ 扩展已安装 ${finalVersion ?? ''}`.trim());
+      console.log(`  ✓ 扩展已安装 ${finalVersion}`);
     }
   }
 

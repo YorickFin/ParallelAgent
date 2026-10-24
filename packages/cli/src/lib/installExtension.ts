@@ -106,6 +106,37 @@ export function installFromStore(cliCommand: string): {
   return run(cliCommand, ['--install-extension', EXTENSION_ID]);
 }
 
+/** 离线安装：直接装本地 vsix，不经过任何网络请求 */
+export function installFromVsixFile(
+  vsixPath: string,
+  cliCommand: string,
+): { ok: boolean; output: string } {
+  if (!fs.existsSync(vsixPath)) {
+    return { ok: false, output: `vsix 文件不存在: ${vsixPath}` };
+  }
+  return run(cliCommand, ['--install-extension', vsixPath]);
+}
+
+/**
+ * 安装后轮询等待版本达标。
+ * Trae 运行时 `--install-extension` 会把请求交给主进程后立即退出，
+ * 实际安装是异步的，所以不能安装完立刻判断版本。
+ */
+export async function waitForVersion(
+  cliCommand: string,
+  expected: string | null,
+  timeoutMs = 30_000,
+  intervalMs = 2_000,
+): Promise<string | null> {
+  const deadline = Date.now() + timeoutMs;
+  do {
+    const now = getInstalledExtensionVersion(cliCommand);
+    if (now && (!expected || compareVersions(now, expected) >= 0)) return now;
+    await new Promise((r) => setTimeout(r, intervalMs));
+  } while (Date.now() < deadline);
+  return getInstalledExtensionVersion(cliCommand);
+}
+
 /** 下载 .vsix 到临时目录并本地安装 */
 async function downloadAndInstall(
   url: string,

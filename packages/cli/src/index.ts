@@ -23,6 +23,7 @@ init 选项：
   --dry-run         只打印将执行的动作，不落地
   --trae-cli <path> 显式指定 Trae CLI 命令路径（探测失败时兜底）
   --from-store      Open VSX / GitHub 都失败后，再尝试 Trae 商店源安装
+  --vsix <path>     离线安装：直接装本地 vsix，跳过所有网络请求
 
 示例：
   npx parallelagent@latest init
@@ -36,6 +37,7 @@ async function main(): Promise<void> {
       'dry-run': { type: 'boolean', default: false },
       'trae-cli': { type: 'string' },
       'from-store': { type: 'boolean', default: false },
+      vsix: { type: 'string' },
       help: { type: 'boolean', short: 'h', default: false },
     },
   });
@@ -53,6 +55,7 @@ async function main(): Promise<void> {
         dryRun: values['dry-run'] ?? false,
         traeCli: values['trae-cli'],
         fromStore: values['from-store'] ?? false,
+        vsixPath: values.vsix,
       });
       break;
     case 'doctor':
