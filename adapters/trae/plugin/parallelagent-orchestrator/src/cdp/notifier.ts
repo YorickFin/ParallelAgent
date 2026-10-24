@@ -53,12 +53,27 @@ export class Notifier {
       return 'skipped';
     }
 
+    let before: actions.TaskStatus | null = null;
+    let switched = false;
+
+    // 只要切过会话，无论最终注入、跳过还是失败，都回到用户原来的会话
+    const restore = async (): Promise<void> => {
+      if (!switched) return;
+      if (!before?.sid || before.sid === arbiterSid) return;
+      try {
+        await actions.navigateTo(client, before.sid);
+        logger.debug(`已切回原会话 ${before.sid}`);
+      } catch (e) {
+        logger.warn(`切回原会话失败: ${(e as Error).message}`);
+      }
+    };
+
     try {
       // 当前选中会话 + 发送按钮状态：零侵入，一次 JS 调用
       // 注意：任务行的 running 图标只在「未选中」时显示，选中时恒为隐藏，
       // 所以 L1 只能证明「忙」，不能证明「空闲」；若仲裁者恰是当前会话，
       // 直接用这里的 state 判断，避免为了探测而反复切轨。
-      const before = await actions.status(client);
+      before = await actions.status(client);
       let state = before;
 
       if (before.sid !== arbiterSid) {
@@ -76,12 +91,14 @@ export class Notifier {
 
         // L2：切到仲裁者做最终确认（L1 的「无图标」只代表疑似空闲）
         await actions.navigateTo(client, arbiterSid);
+        switched = true;
         await actions.assertIdentity(client, arbiterSid);
         state = await actions.status(client);
       }
 
       if (state.state !== 'idle') {
         logger.debug(`通知跳过：仲裁者状态 ${state.state}`);
+        await restore();
         return 'skipped';
       }
 
@@ -89,12 +106,14 @@ export class Notifier {
       const draft = await inputText(client);
       if (draft.length > 0) {
         logger.debug('通知跳过：仲裁者输入框有草稿');
-        return 'skipped';
+        await restore();
+        return 'skipped-draft';
       }
 
       const now = Date.now();
       if (now - this.lastInjectAt < MIN_INJECT_GAP_MS) {
         logger.debug('通知跳过：注入冷却中');
+        await restore();
         return 'skipped';
       }
 
@@ -108,19 +127,14 @@ export class Notifier {
       });
 
       // 切回用户原来的会话（仲裁者新回合在后台继续执行）
-      if (before.sid && before.sid !== arbiterSid) {
-        try {
-          await actions.navigateTo(client, before.sid);
-        } catch (e) {
-          logger.warn(`切回原会话失败: ${(e as Error).message}`);
-        }
-      }
+      await restore();
 
       return 'sent';
     } catch (e) {
       const msg = (e as Error).message;
       logger.error(`通知注入失败: ${msg}`);
       this.writeAlert(req, 'notify_inject_failed', msg);
+      await restore();
       return 'failed';
     }
   }

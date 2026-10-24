@@ -54,8 +54,8 @@ export interface NotifyRequest {
   降级: boolean;
 }
 
-/** sent：已注入/已降级；skipped：条件不满足，下轮再试；failed：注入失败 */
-export type NotifyOutcome = 'sent' | 'skipped' | 'failed';
+/** sent：已注入/已降级；skipped：条件不满足，下轮再试；skipped-draft：输入框有草稿，长退避；failed：注入失败 */
+export type NotifyOutcome = 'sent' | 'skipped' | 'skipped-draft' | 'failed';
 
 export interface WatchJobDeps {
   paths: MailboxPaths;
@@ -559,8 +559,13 @@ export class WatchJobManager {
       return;
     }
     if (outcome === 'skipped') {
-      // 仲裁者忙 / 有草稿：保持 pending，退避后重试
+      // 仲裁者忙 / 冷却：保持 pending，短退避后重试
       job.nextNotifyAt = now + 5000;
+      return;
+    }
+    if (outcome === 'skipped-draft') {
+      // 输入框有草稿：长退避，避免反复切会话打扰用户
+      job.nextNotifyAt = now + 60_000;
       return;
     }
     // failed：fail-stop，不盲发，长退避
