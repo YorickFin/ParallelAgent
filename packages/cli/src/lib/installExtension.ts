@@ -137,7 +137,15 @@ export async function waitForVersion(
   return getInstalledExtensionVersion(cliCommand);
 }
 
-/** 下载 .vsix 到临时目录并本地安装 */
+/** 稳定的 vsix 缓存目录：不用 %TEMP%（可能被系统清理/杀软拦截） */
+function cacheDir(): string {
+  const base = process.env.LOCALAPPDATA ?? os.tmpdir();
+  const dir = path.join(base, 'parallelagent', 'cache');
+  fs.mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
+/** 下载 .vsix 到稳定缓存目录并本地安装 */
 async function downloadAndInstall(
   url: string,
   label: string,
@@ -148,18 +156,30 @@ async function downloadAndInstall(
     if (!resp.ok) {
       return { ok: false, output: `${label} 下载失败: HTTP ${resp.status} (${url})` };
     }
+    const nameFromUrl = path.basename(new URL(url).pathname);
     const vsixPath = path.join(
-      os.tmpdir(),
-      `parallelagent-orchestrator-${Date.now()}.vsix`,
+      cacheDir(),
+      nameFromUrl || `parallelagent-orchestrator-${Date.now()}.vsix`,
     );
-    fs.writeFileSync(vsixPath, Buffer.from(await resp.arrayBuffer()));
-    return run(cliCommand, ['--install-extension', vsixPath]);
+    const bytes = Buffer.from(await resp.arrayBuffer());
+    fs.writeFileSync(vsixPath, bytes);
+    if (!fs.existsSync(vsixPath) || fs.statSync(vsixPath).size === 0) {
+      return { ok: false, output: `${label} 下载后文件写入失败: ${vsixPath}` };
+    }
+    const r = run(cliCommand, ['--install-extension', vsixPath]);
+    if (!r.ok) {
+      return {
+        ok: false,
+        output: `${r.output}\n已保留 vsix: ${vsixPath}（可用 --vsix 该路径离线安装）`,
+      };
+    }
+    return r;
   } catch (e) {
     return { ok: false, output: `${label} 下载失败: ${(e as Error).message}` };
   }
 }
 
-/** 兜底：从 GitHub Release 下载 .vsix 到 %TEMP%，再本地安装 */
+/** 兜底：从 GitHub Release 下载 .vsix 到稳定缓存目录，再本地安装 */
 export async function installFromGithubRelease(
   cliCommand: string,
 ): Promise<{ ok: boolean; output: string }> {

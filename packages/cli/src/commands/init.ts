@@ -31,11 +31,6 @@ interface InitOptions {
   vsixPath?: string;
 }
 
-/** 取输出的第一行，用于错误摘要 */
-function firstLine(text: string): string {
-  return text.split(/\r?\n/).map((l) => l.trim()).find(Boolean) ?? '未知错误';
-}
-
 /** 打印将要执行的动作（dry-run 模式） */
 function dry(label: string): void {
   console.log(`[dry-run] ${label}`);
@@ -133,7 +128,14 @@ export async function runInit(options: InitOptions): Promise<void> {
         const r = await attempt.run();
         if (!r.ok) {
           lastError = r.output;
-          console.log(`  ✗ ${attempt.label} 失败: ${firstLine(r.output)}`);
+          const brief = r.output
+            .split(/\r?\n/)
+            .map((l) => l.trim())
+            .filter(Boolean)
+            .slice(0, 4)
+            .map((l) => `    ${l}`)
+            .join('\n');
+          console.log(`  ✗ ${attempt.label} 失败:\n${brief}`);
           continue;
         }
         // 安装命令返回后 Trae 可能仍在异步写入，必须轮询等待版本变化
