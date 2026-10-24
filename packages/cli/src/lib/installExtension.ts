@@ -74,27 +74,56 @@ function quoteWinArg(arg: string): string {
   return `"${arg.replace(/"/g, '\\"')}"`;
 }
 
-function run(
-  target: TraeTarget,
+/** 同步等待（run 是同步调用链，只能阻塞） */
+function sleepSync(ms: number): void {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+type RunResult = { ok: boolean; output: string };
+
+function formatSpawnError(e: unknown): string {
+  const err = e as {
+    stdout?: string;
+    stderr?: string;
+    message?: string;
+    status?: number | null;
+    code?: string;
+  };
+  const status = err.status ?? 'null';
+  return `exit=${status} code=${err.code ?? '-'}\n${err.stdout ?? ''}${err.stderr ?? ''}${err.message ?? ''}`;
+}
+
+/** 直连 exe 启动；遇到 EACCES/EPERM/EBUSY 这类瞬时拒绝时重试 */
+function runDirect(
+  exePath: string,
+  script: string,
   args: string[],
-): { ok: boolean; output: string } {
-  const script = cliScriptPath(target.exePath);
-  try {
-    // 直连 exe：等价于 trae-cn.cmd 里做的 ELECTRON_RUN_AS_NODE + exe + cli.js
-    if (target.exePath && script) {
-      const output = execFileSync(target.exePath, [script, ...args], {
+): RunResult {
+  const retryable = new Set(['EACCES', 'EPERM', 'EBUSY', 'UNKNOWN']);
+  let last: RunResult = { ok: false, output: '' };
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const output = execFileSync(exePath, [script, ...args], {
         encoding: 'utf8',
         stdio: ['ignore', 'pipe', 'pipe'],
         timeout: 120_000,
         env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', VSCODE_DEV: '' },
       });
       return { ok: true, output };
+    } catch (e) {
+      last = { ok: false, output: formatSpawnError(e) };
+      const code = (e as { code?: string }).code;
+      // 只有进程根本没起来才重试；跑起来后非 0 退出不重试
+      if (!code || !retryable.has(code) || attempt === 2) break;
+      sleepSync(800 * (attempt + 1));
     }
+  }
+  return last;
+}
 
-    const cmd = target.cliCommand;
-    if (!cmd) return { ok: false, output: '未找到 Trae exe 或 CLI 命令' };
-
-    // 兜底：Windows 上 .cmd/.bat 不能被 execFile 直接启动，必须经 shell
+/** 兜底：经 shell 调 .cmd/.bat（Windows 上不能 execFile 直启） */
+function runViaShell(cmd: string, args: string[]): RunResult {
+  try {
     const viaShell = process.platform === 'win32' && /\.(cmd|bat)$/i.test(cmd);
     const output = viaShell
       ? execFileSync([cmd, ...args.map(quoteWinArg)].join(' '), {
@@ -110,18 +139,30 @@ function run(
         });
     return { ok: true, output };
   } catch (e) {
-    const err = e as {
-      stdout?: string;
-      stderr?: string;
-      message?: string;
-      status?: number | null;
-    };
-    const status = err.status ?? 'null';
-    return {
-      ok: false,
-      output: `exit=${status}\n${err.stdout ?? ''}${err.stderr ?? ''}${err.message ?? ''}`,
-    };
+    return { ok: false, output: formatSpawnError(e) };
   }
+}
+
+function run(target: TraeTarget, args: string[]): RunResult {
+  const script = cliScriptPath(target.exePath);
+  if (target.exePath && script) {
+    // 直连 exe：等价于 trae-cn.cmd 里做的 ELECTRON_RUN_AS_NODE + exe + cli.js
+    const direct = runDirect(target.exePath, script, args);
+    if (direct.ok) return direct;
+    if (!target.cliCommand) return direct;
+    // 直连被系统拒绝时回退 .cmd，不让一次瞬时 EACCES 打断整条安装
+    const fallback = runViaShell(target.cliCommand, args);
+    return fallback.ok
+      ? fallback
+      : {
+          ok: false,
+          output: `直连 exe 失败:\n${direct.output}\n回退 .cmd 也失败:\n${fallback.output}`,
+        };
+  }
+
+  const cmd = target.cliCommand;
+  if (!cmd) return { ok: false, output: '未找到 Trae exe 或 CLI 命令' };
+  return runViaShell(cmd, args);
 }
 
 /** `.obsolete` 里登记的是目录名（小写），被标记的即将删除，不算已安装 */
@@ -218,6 +259,25 @@ function cacheDir(): string {
   return dir;
 }
 
+/** 网络请求重试：代理/TUN 环境下偶发 fetch failed，重试 2 次再判失败 */
+async function fetchWithRetry(
+  url: string,
+  attempts = 3,
+): Promise<Response> {
+  let lastError: unknown;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await fetch(url, { redirect: 'follow' });
+    } catch (e) {
+      lastError = e;
+      if (i < attempts - 1) {
+        await new Promise((r) => setTimeout(r, 1000 * (i + 1)));
+      }
+    }
+  }
+  throw lastError;
+}
+
 /** 下载 .vsix 到稳定缓存目录并本地安装 */
 async function downloadAndInstall(
   url: string,
@@ -225,7 +285,7 @@ async function downloadAndInstall(
   target: TraeTarget,
 ): Promise<{ ok: boolean; output: string }> {
   try {
-    const resp = await fetch(url, { redirect: 'follow' });
+    const resp = await fetchWithRetry(url);
     if (!resp.ok) {
       return { ok: false, output: `${label} 下载失败: HTTP ${resp.status} (${url})` };
     }
@@ -261,7 +321,7 @@ export async function installFromOpenVsx(
   const apiBase = `https://open-vsx.org/api/${EXTENSION_ID.replace('.', '/')}`;
   const wanted = version ?? 'latest';
   try {
-    const metaResp = await fetch(`${apiBase}/${wanted}`, { redirect: 'follow' });
+    const metaResp = await fetchWithRetry(`${apiBase}/${wanted}`);
     if (!metaResp.ok) {
       return {
         ok: false,

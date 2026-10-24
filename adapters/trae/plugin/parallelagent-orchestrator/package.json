@@ -3,7 +3,7 @@
   "packageManager": "pnpm@10.33.2",
   "displayName": "ParallelAgent Orchestrator",
   "description": "CDP 执行器 + HTTP 网关 + 文件信箱 watch —— 仲裁者的自动化之手",
-  "version": "1.2.4",
+  "version": "1.2.5",
   "publisher": "yorickfin",
   "repository": "https://github.com/YorickFin/ParallelAgent",
   "homepage": "https://github.com/YorickFin/ParallelAgent",
