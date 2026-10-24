@@ -1,4 +1,4 @@
-# Copyright 2026 ParallelAgent Contributors
+﻿# Copyright 2026 ParallelAgent Contributors
 # SPDX-License-Identifier: Apache-2.0
 #
 # ParallelAgent：重启 Trae（调试端口由 argv.json 持久化，无需命令行参数）
