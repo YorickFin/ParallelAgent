@@ -129,20 +129,64 @@ export class WatchJobManager {
     notify?: NotifyMode;
     仲裁者?: string | null;
   }): SubmitResult {
-    // 1. 同 (轮次, 版本) 已有 running job → 复用，避免覆盖同一个状态文件
-    const existing = this.findRunning(input.轮次, input.版本);
+    // 1. 同 (轮次, 版本) 已有 running / done 的 job → 复用，避免覆盖同一个状态文件
+    const existing = this.findReusable(input.轮次, input.版本);
     if (existing) {
-      const missing = input.轨.filter((o) => !existing.state.轨道[o]);
+      const st = existing.state;
+      const missing = input.轨.filter((o) => !st.轨道[o]);
+
+      // 已完成的 job：纯重复提交直接复用；带新轨则追加并恢复运行
+      if (st.job状态 === 'done') {
+        if (missing.length === 0) {
+          logger.info(`复用已完成 job ${st.job}（第${input.轮次}轮 v${input.版本}）`);
+          return {
+            state: st,
+            复用: true,
+            警告: [
+              `job ${st.job}（第${input.轮次}轮 v${input.版本}）已全部处理完毕，无需重复提交`,
+            ],
+          };
+        }
+
+        const now = new Date();
+        for (const orbit of missing) {
+          st.轨道[orbit] = {
+            状态: 'pending',
+            回执: null,
+            mtime: null,
+            处理: null,
+            通知于: null,
+            重发次数: 0,
+            处理于: null,
+          };
+          existing.orbits.push(orbit);
+          existing.stable.set(orbit, { lastMtime: null, count: 0 });
+        }
+        st.job状态 = 'running';
+        st.更新于 = now.toISOString();
+        existing.deadline =
+          now.getTime() + (input.timeout_s ?? this.deps.defaultTimeoutS) * 1000;
+        existing.nextNotifyAt = 0;
+        this.persist(existing);
+        logger.audit('watch_append', { job: st.job, 追加: missing });
+        return {
+          state: st,
+          复用: true,
+          警告: [
+            `已把 ${missing.join('/')} 追加到 job ${st.job}（第${input.轮次}轮 v${input.版本}），job 恢复运行`,
+          ],
+        };
+      }
+
+      // 仍在运行的 job：只提示缺轨，不改变已有时序
       const warnings: string[] = [];
       if (missing.length > 0) {
         warnings.push(
-          `job ${existing.state.job} 已覆盖第${input.轮次}轮 v${input.版本}，但缺少轨 ${missing.join('/')}；请用新的版本号重新提交`,
+          `job ${st.job} 已覆盖第${input.轮次}轮 v${input.版本}，但缺少轨 ${missing.join('/')}；请用新的版本号重新提交`,
         );
       }
-      logger.info(
-        `复用已有 job ${existing.state.job}（第${input.轮次}轮 v${input.版本}）`,
-      );
-      return { state: existing.state, 复用: true, 警告: warnings };
+      logger.info(`复用运行中 job ${st.job}（第${input.轮次}轮 v${input.版本}）`);
+      return { state: st, 复用: true, 警告: warnings };
     }
 
     // 2. 单轨单在途的延伸：同一轨不应同时挂在两个未清账的 job 上（只警告，不阻塞）
@@ -210,11 +254,11 @@ export class WatchJobManager {
     return { state, 复用: false, 警告: warnings };
   }
 
-  /** 查找同 (轮次, 版本) 仍在运行的 job */
-  private findRunning(轮次: number, 版本: number): JobRuntime | undefined {
+  /** 查找同 (轮次, 版本) 仍可复用的 job（running 或已 done） */
+  private findReusable(轮次: number, 版本: number): JobRuntime | undefined {
     for (const job of this.jobs.values()) {
       if (
-        job.state.job状态 === 'running' &&
+        (job.state.job状态 === 'running' || job.state.job状态 === 'done') &&
         job.state.轮次 === 轮次 &&
         job.state.版本 === 版本
       ) {
