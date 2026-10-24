@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.2.0（设计中，未发布）
+
+> 设计见 `adapters/trae/docs/ParallelAgent-v1.2.0设计文档.md`
+
+- **破坏性变更**：`POST /watch` 由「阻塞等待回执」改为「提交后台 job 并立即返回 `job_id`」，响应不再包含 `{完成, 未完成}`
+- 新增待处理队列：每轨完成/超时写入 `信号/轮次状态/第N轮-v{M}.json`，字段分 `状态`（pending/done/timeout/failed）与 `处理`（null/pending/notified/done）
+- 新增 `GET /watch/status`、`POST /watch/ack`、`POST /watch/cancel`、`GET /watch/jobs`、`POST /bind-arbiter`
+- 新增空闲通知器：任务行图标预筛 + `status()` 二次确认 + 输入框判空 → 注入固定话术唤醒仲裁者，注入后切回用户原会话
+- 通知去重与降级：`notified` 态 + 合并窗口 + 冷却；重发 2 次无 ack 降级为 VS Code 气泡 + `alert.signal`
+- 逐轨入队（`notify=each`，默认）与全齐入队（`notify=all`）可选；`timeout`/`failed` 始终立即告警
+- 仲裁者改为消费闭环：单轨增量实检 → `ack` → 剩余队列非空则同回合继续；整轮评估留到全轨终态
+- watcher 移除「未完成即写 alert」的副作用，超时判定上移到 job 层
+- 新增固定话术 `watch_notify`、`watch_alert`
+
 ## 1.1.3
 
 - 打包内新增 `README.md` 与 `LICENSE`，Marketplace / Open VSX 可展示 Overview

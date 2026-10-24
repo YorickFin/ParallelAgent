@@ -6,7 +6,9 @@ ParallelAgent 的编排器扩展：CDP 执行器 + HTTP 网关 + 文件信箱 wa
 
 - **建轨 / 切轨 / 删轨**：通过 CDP 操作 Trae 的任务会话
 - **派发固定话术**：只传轨号、轮次、版本号和文件指针，不传任务内容
-- **等待回执**：轮询 `.parallel-agent/回执/第N轮/T-X-v{M}.md`，文件出现且 mtime 稳定即完成
+- **等待回执**：后台 job 轮询 `.parallel-agent/回执/第N轮/T-X-v{M}.md`，文件出现且 mtime 稳定即入队
+- **待处理队列**：把每轨的完成状态写进 `信号/轮次状态/第N轮-v{M}.json`，仲裁者 ack 消账
+- **空闲通知**：仲裁者空闲且输入框为空时注入固定话术唤醒，注入后切回用户原会话
 - **开轨握手**：等待 `就绪/T-X.md`，确保轨道启动完成后再派发
 - **身份断言**：每次发送前核对任务身份，失败即停机，不盲发
 
@@ -35,7 +37,12 @@ npx parallelagent@latest init
 | POST | `/new` | 新建轨道会话 |
 | POST | `/dispatch` | 向指定轨道发送固定话术 |
 | POST | `/wait-ready` | 等待轨道写出就绪文件 |
-| POST | `/watch` | 等待指定轮次/版本的回执 |
+| POST | `/watch` | 提交回执等待 job，返回 `job_id`（不阻塞） |
+| GET | `/watch/status` | 查询 job 的待处理队列 |
+| POST | `/watch/ack` | 标记某轨已消费，并返回剩余队列 |
+| POST | `/watch/cancel` | 取消 job |
+| GET | `/watch/jobs` | 列出全部 job |
+| POST | `/bind-arbiter` | 绑定当前选中会话为通知目标 |
 | POST | `/delete` | 删除轨道会话 |
 
 ## 配置
@@ -46,7 +53,7 @@ npx parallelagent@latest init
 | `parallelagent.httpPort` | `9318` | HTTP 网关端口 |
 | `parallelagent.mailboxRoot` | `.parallel-agent` | 文件信箱根目录 |
 | `parallelagent.pollIntervalMs` | `1000` | 回执轮询间隔 |
-| `parallelagent.watchTimeoutS` | `1800` | watch 默认超时 |
+| `parallelagent.watchTimeoutS` | `1800` | 单轨 job 超时（超时即置 `timeout` 并入队告警） |
 
 ## 链接
 
