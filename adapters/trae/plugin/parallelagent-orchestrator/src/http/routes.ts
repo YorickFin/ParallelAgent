@@ -3,11 +3,12 @@
 
 import type { CdpClient } from '../cdp/cdpClient';
 import type { OrbitTable } from '../state/orbitTable';
+import type { WatchJobManager } from '../mailbox/watchJob';
 import * as actions from '../cdp/actions';
 import { ParallelAgentError } from '../errors';
 import * as logger from '../logger';
 
-// ── 话术模板表（定稿 §9.6 五种） ──────────────────────
+// ── 话术模板表（定稿 §9.6 + v1.2.0 两条） ─────────────
 
 /** 话术模板标识 */
 export type PhraseTemplateId =
@@ -15,7 +16,9 @@ export type PhraseTemplateId =
   | 'dispatch_round'
   | 'cancel_standby'
   | 'arbiter_ii'
-  | 'track_ii';
+  | 'track_ii'
+  | 'watch_notify'
+  | 'watch_alert';
 
 /** 话术参数 */
 export interface PhraseParams {
@@ -29,6 +32,8 @@ export interface PhraseParams {
   手册版本?: string;
   /** 承接的轨道列表（第二任仲裁者用） */
   轨道们?: string[];
+  /** 等待 job id（通知话术用） */
+  job?: string;
 }
 
 /** 根据模板 + 参数生成固定话术 */
@@ -49,6 +54,10 @@ export function buildPhrase(
       return `读交接手册第${params.手册版本}版 .parallel-agent/交接手册/第${params.手册版本}版-*.md，你是仲裁者 II 世，承接 ${params.轨道们?.join('/') ?? ''} 收尾`;
     case 'track_ii':
       return `读交接手册第${params.手册版本}版 .parallel-agent/交接手册/第${params.手册版本}版-*.md，你是 ${params.轨} II 世，承接 ${params.轨} 身份`;
+    case 'watch_notify':
+      return `读 .parallel-agent/信号/轮次状态/ 下的待处理状态文件（当前 job ${params.job}），可用 GET /watch/jobs 查看全部；处理完用 POST /watch/ack 标记`;
+    case 'watch_alert':
+      return `读 .parallel-agent/信号/轮次状态/ 下的待处理状态文件（当前 job ${params.job}），有轨超时或失败，优先处理；可用 GET /watch/jobs 查看全部`;
   }
 }
 
@@ -82,6 +91,8 @@ export interface RouteDeps {
   cdp: CdpClient | null;
   orbit: OrbitTable;
   watcher: MailboxWatcher | null;
+  /** 回执等待 job 管理器（v1.2.0） */
+  jobs: WatchJobManager | null;
   /** 目标项目名（新建轨道会话时自动挂该项目） */
   projectName: string;
 }
@@ -116,7 +127,12 @@ export function buildRoutes(): RouteEntry[] {
     { method: 'POST', path: '/new', handler: handleNew },
     { method: 'POST', path: '/delete', handler: handleDelete },
     { method: 'POST', path: '/wait-ready', handler: handleWaitReady },
-    { method: 'POST', path: '/watch', handler: handleWatch },
+    { method: 'POST', path: '/watch', handler: handleWatchSubmit },
+    { method: 'GET', path: '/watch/status', handler: handleWatchStatus },
+    { method: 'POST', path: '/watch/ack', handler: handleWatchAck },
+    { method: 'POST', path: '/watch/cancel', handler: handleWatchCancel },
+    { method: 'GET', path: '/watch/jobs', handler: handleWatchJobs },
+    { method: 'POST', path: '/bind-arbiter', handler: handleBindArbiter },
   ];
 }
 
@@ -353,8 +369,8 @@ async function handleWaitReady(
   };
 }
 
-/** POST /watch — 阻塞监听回执 + 超时 */
-async function handleWatch(
+/** POST /watch — 提交后台等待 job，立即返回 job_id（v1.2.0 不再阻塞） */
+async function handleWatchSubmit(
   req: ParsedRequest,
   deps: RouteDeps,
 ): Promise<unknown> {
@@ -363,6 +379,7 @@ async function handleWatch(
     版本?: number;
     轨?: string[];
     timeout_s?: number;
+    notify?: 'each' | 'all';
   };
 
   if (!isPositiveInt(body.轮次) || !Array.isArray(body.轨) || body.轨.length === 0) {
@@ -374,28 +391,189 @@ async function handleWatch(
     return { ok: false, err: '版本 必须为正整数', type: 'signal_invalid' };
   }
 
-  if (!deps.watcher) {
+  if (!deps.jobs) {
     return {
       ok: false,
-      err: '文件信箱 watch 模块未初始化',
+      err: 'job 管理器未初始化',
       type: 'watch_unavailable',
     };
   }
 
-  const timeoutS = body.timeout_s ?? 1800;
-  const result = await deps.watcher.watchReceipts(
-    body.轮次,
-    body.轨,
-    timeoutS,
-    version,
-  );
+  const timeoutS = body.timeout_s;
+  if (
+    timeoutS !== undefined &&
+    (typeof timeoutS !== 'number' || !Number.isFinite(timeoutS) || timeoutS <= 0)
+  ) {
+    return { ok: false, err: 'timeout_s 必须为正数', type: 'signal_invalid' };
+  }
+
+  const notify = body.notify === 'all' ? 'all' : 'each';
+  const result = deps.jobs.submit({
+    轮次: body.轮次,
+    版本: version,
+    轨: body.轨,
+    timeout_s: timeoutS,
+    notify,
+    仲裁者: deps.orbit.getArbiter()?.sid ?? null,
+  });
 
   return {
     ok: true,
-    轮次: body.轮次,
-    版本: version,
-    完成: result.completed,
-    未完成: result.incomplete,
+    job_id: result.state.job,
+    轮次: result.state.轮次,
+    版本: result.state.版本,
+    notify: result.state.notify,
+    状态文件: `信号/轮次状态/第${result.state.轮次}轮-v${result.state.版本}.json`,
+    /** true = 同轮次版本已有 job，本次复用（未新建） */
+    复用: result.复用,
+    警告: result.警告,
+  };
+}
+
+/** GET /watch/status?job=xxx — 只读查询待处理队列 */
+async function handleWatchStatus(
+  req: ParsedRequest,
+  deps: RouteDeps,
+): Promise<unknown> {
+  const jobId = req.query.job;
+  if (!jobId) {
+    return { ok: false, err: '缺少 job 参数', type: 'signal_invalid' };
+  }
+  if (!deps.jobs) {
+    return { ok: false, err: 'job 管理器未初始化', type: 'watch_unavailable' };
+  }
+
+  const state = deps.jobs.get(jobId);
+  if (!state) {
+    return { ok: false, err: `job 不存在: ${jobId}`, type: 'signal_invalid' };
+  }
+  return { ok: true, ...queueView(state) };
+}
+
+/** POST /watch/ack — 标记某轨已消费，并带回剩余队列 */
+async function handleWatchAck(
+  req: ParsedRequest,
+  deps: RouteDeps,
+): Promise<unknown> {
+  const body = req.body as { job?: string; 轨?: string };
+  if (!body.job || !body.轨) {
+    return { ok: false, err: '缺少 job 或 轨 字段', type: 'signal_invalid' };
+  }
+  if (!deps.jobs) {
+    return { ok: false, err: 'job 管理器未初始化', type: 'watch_unavailable' };
+  }
+  return deps.jobs.ack(body.job, body.轨);
+}
+
+/** POST /watch/cancel — 取消 job 并清理 */
+async function handleWatchCancel(
+  req: ParsedRequest,
+  deps: RouteDeps,
+): Promise<unknown> {
+  const body = req.body as { job?: string };
+  if (!body.job) {
+    return { ok: false, err: '缺少 job 字段', type: 'signal_invalid' };
+  }
+  if (!deps.jobs) {
+    return { ok: false, err: 'job 管理器未初始化', type: 'watch_unavailable' };
+  }
+  const r = deps.jobs.cancel(body.job);
+  return r.ok ? { ok: true } : { ok: false, err: r.err, type: 'signal_invalid' };
+}
+
+/** GET /watch/jobs — 列出全部 job（自检与恢复） */
+async function handleWatchJobs(
+  _req: ParsedRequest,
+  deps: RouteDeps,
+): Promise<unknown> {
+  if (!deps.jobs) {
+    return { ok: false, err: 'job 管理器未初始化', type: 'watch_unavailable' };
+  }
+  return {
+    ok: true,
+    jobs: deps.jobs.list().map((s) => {
+      const entries = Object.entries(s.轨道);
+      const 待处理 = entries
+        .filter(([, v]) => v.处理 === 'pending' || v.处理 === 'notified')
+        .map(([k]) => k);
+      return {
+        job: s.job,
+        轮次: s.轮次,
+        版本: s.版本,
+        job状态: s.job状态,
+        notify: s.notify,
+        创建于: s.创建于,
+        待处理,
+        轨道: Object.fromEntries(
+          entries.map(([k, v]) => [
+            k,
+            { 状态: v.状态, 处理: v.处理, 回执: v.回执 },
+          ]),
+        ),
+      };
+    }),
+  };
+}
+
+/** POST /bind-arbiter — 把当前选中会话绑定为通知目标 */
+async function handleBindArbiter(
+  _req: ParsedRequest,
+  deps: RouteDeps,
+): Promise<unknown> {
+  const cdp = deps.cdp;
+  if (!cdp) {
+    return { ok: false, err: 'CDP 未连接', type: 'cdp_unavailable' };
+  }
+
+  const s = await actions.status(cdp);
+  if (!s.sid) {
+    return {
+      ok: false,
+      err: '当前没有选中会话，无法绑定仲裁者',
+      type: 'signal_invalid',
+    };
+  }
+
+  deps.orbit.bindArbiter(s.sid, s.title);
+  deps.jobs?.setArbiter(s.sid);
+  logger.audit('bind_arbiter', { sid: s.sid, 任务名: s.title });
+
+  return { ok: true, sid: s.sid, 任务名: s.title };
+}
+
+/** 队列视图：只含信号级信息，不含任务内容 */
+function queueView(state: {
+  job: string;
+  轮次: number;
+  版本: number;
+  job状态: string;
+  notify: string;
+  轨道: Record<
+    string,
+    { 状态: string; 处理: string | null; 回执: string | null; mtime: string | null }
+  >;
+}): {
+  job: string;
+  轮次: number;
+  版本: number;
+  job状态: string;
+  notify: string;
+  轨道: unknown;
+  待处理: string[];
+  未完成: string[];
+} {
+  const entries = Object.entries(state.轨道);
+  return {
+    job: state.job,
+    轮次: state.轮次,
+    版本: state.版本,
+    job状态: state.job状态,
+    notify: state.notify,
+    轨道: state.轨道,
+    待处理: entries
+      .filter(([, e]) => e.处理 === 'pending' || e.处理 === 'notified')
+      .map(([k]) => k),
+    未完成: entries.filter(([, e]) => e.状态 === 'pending').map(([k]) => k),
   };
 }
 

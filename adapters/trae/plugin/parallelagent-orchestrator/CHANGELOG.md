@@ -1,5 +1,28 @@
 # Changelog
 
+## 1.2.0（已实现，待真机实测与发布）
+
+> 设计见 `adapters/trae/docs/ParallelAgent-v1.2.0设计文档.md`
+
+- **破坏性变更**：`POST /watch` 由「阻塞等待回执」改为「提交后台 job 并立即返回 `job_id`」，响应不再包含 `{完成, 未完成}`
+- 新增待处理队列：每轨完成/超时写入 `信号/轮次状态/第N轮-v{M}.json`，字段分 `状态`（pending/done/timeout/failed）与 `处理`（null/pending/notified/done）
+- 新增 `GET /watch/status`、`POST /watch/ack`、`POST /watch/cancel`、`GET /watch/jobs`、`POST /bind-arbiter`
+- 新增空闲通知器：任务行图标预筛 + `status()` 二次确认 + 输入框判空 → 注入固定话术唤醒仲裁者，注入后切回用户原会话
+- 通知去重与降级：`notified` 态 + 合并窗口 + 冷却；重发 2 次无 ack 降级为 VS Code 气泡 + `alert.signal`
+- 逐轨入队（`notify=each`，默认）与全齐入队（`notify=all`）可选；`timeout`/`failed` 始终立即告警
+- 仲裁者改为消费闭环：单轨增量实检 → `ack` → 剩余队列非空则同回合继续；整轮评估留到全轨终态
+- watcher 移除「未完成即写 alert」的副作用，超时判定上移到 job 层
+- 新增固定话术 `watch_notify`、`watch_alert`
+- 支持多 job 并存（不同轨处于不同轮次）：每个「轮次+版本」独立状态文件；同轮次版本重复 `/watch` 幂等复用并返回 `复用/警告`；同一轨跨 job 未清账时给出警告
+- 修复：job 已 `done` 后重复提交会新建 job 并覆盖状态文件；现在复用已完成 job，带新轨时追加并恢复运行，已处理轨不重复入队
+- 修复：通知在切到仲裁者后因草稿/忙而跳过时不切回原会话；现在只要切过会话，无论注入、跳过还是失败都会切回
+- 输入框有草稿时改为 60 秒长退避，避免每 5 秒来回切会话打扰用户
+- 修复「带调试端口重启 Trae」静默失败：WMI 服务的环境没有 PowerShell 的 PATH，`CommandLine` 里只写 `powershell` 会返回 `ReturnValue=9`（Path Not Found），重启脚本从未被拉起。现在改用 `powershell.exe` 绝对路径 + `-EncodedCommand`，并校验 WMI `ReturnValue`，失败时明确报错而不是提示成功
+- `restart-with-debug.ps1` 新增 `-LogPath` 参数，重启日志写入扩展 globalStorage（`restart.log`）
+- 修复重启脚本真正无法执行的原因：`.ps1` 为 UTF-8 无 BOM，Windows PowerShell 5.1 按 GBK 解析中文注释后语法报错（`Unexpected token ')'`）。改为 UTF-8 with BOM，并已通过语法解析检查
+- 重启脚本改为 `-WindowStyle Hidden -NonInteractive` 运行，不再把 PowerShell 控制台窗口显示在前台（实测未隐藏时 `MainWindowHandle` 非 0，隐藏后为 0）
+- 通知话术改为指向 `信号/轮次状态/` 目录并提示 `GET /watch/jobs`；`GET /watch/jobs` 返回每个 job 的 `待处理` 列表
+
 ## 1.1.3
 
 - 打包内新增 `README.md` 与 `LICENSE`，Marketplace / Open VSX 可展示 Overview

@@ -77,6 +77,16 @@ export class MailboxPaths {
     return path.join(this.signalDir, name);
   }
 
+  /** 轮次状态目录：信号/轮次状态/ */
+  get roundStateDir(): string {
+    return path.join(this.signalDir, '轮次状态');
+  }
+
+  /** 待处理队列状态文件：信号/轮次状态/第N轮-v{M}.json */
+  roundStateFile(round: number, version: number): string {
+    return path.join(this.roundStateDir, `第${round}轮-v${version}.json`);
+  }
+
   // ── 固定信号文件名 ────────────────────────────────
 
   get dispatchSignal(): string {

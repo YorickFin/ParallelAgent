@@ -2,6 +2,7 @@
 
 > 状态：**已实施（v1.1.0 分支本地完成，待打 tag 发布）**
 > 前置：一期（手动触发版）已完成并联调通过，见 [ParallelAgent第一期实现规划.md](ParallelAgent第一期实现规划.md)
+> 后续：回执等待与通知机制重构见 [ParallelAgent-v1.2.0设计文档.md](ParallelAgent-v1.2.0设计文档.md)
 > 目标：把"源码安装"变成 **`npx parallelagent init`** 一键安装
 
 ## Context

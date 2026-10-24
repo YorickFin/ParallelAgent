@@ -34,6 +34,7 @@ description: "ParallelAgent 仲裁者。用户说'拆开跑/并行/分轨/开 N 
 5. Skill 间松耦合：仲裁者与轨道互不知道对方存在，只认文件信箱约定
 6. fail-stop：找不到锚点 / 身份断言失败 → 立即停机告警，禁止盲点/盲发
 7. **单轨单在途消息**：同一轨上一条消息的完成信号未到，不得发下一条消息；转达单可提前落盘，但派发消息必须等就绪（细则见协议 §7.1）
+8. **不阻塞等待回执**：`/watch` 只提交 job 并立即返回，等待由状态文件承载；仲裁者空闲时被唤醒，逐条消费并 ack（v1.2.0，细则见协议 §7.2）
 
 ---
 
@@ -52,6 +53,9 @@ description: "ParallelAgent 仲裁者。用户说'拆开跑/并行/分轨/开 N 
 - 阶段 2→3 切换（收回决策）
 - 自检告警时
 - 用户主动要求时
+- 会话丢失 / 交接重建时
+
+**开轨前置检查（硬性）**：进入阶段 2 前，若 `交接手册/` 下没有任何版本，必须先补写「第1版-开轨前.md」，否则**不得开轨、不得调用 `/new`**。会话是易失的，交接手册是唯一冷启动入口；先开轨后补手册等于把恢复能力押在对话历史上。
 
 ---
 
@@ -168,13 +172,21 @@ description: "ParallelAgent 仲裁者。用户说'拆开跑/并行/分轨/开 N 
 
 | Endpoint | 入参 | 出参 |
 |---|---|---|
+| `POST /bind-arbiter` | `{}` | `{ok, sid, 任务名}` |
 | `POST /dispatch` | `{轨:"T-A", 轮次:1, 版本:1, 模板:"dispatch_round"}` | `{ok, sid, sent_at}` |
 | `POST /new` | `{轨:"T-A", 模板:"new_track"}` | `{ok, sid, named_at}` |
 | `POST /wait-ready` | `{轨:["T-A"], since:<毫秒或ISO>, timeout_s:300}` | `{ok, since, 就绪:[...], 未就绪:[...]}` |
-| `POST /watch` | `{轮次:1, 版本:1, 轨:["T-A","T-B"], timeout_s:1800}` | `{ok, 轮次, 版本, 完成:[...], 未完成:[...]}` |
+| `POST /watch` | `{轮次:1, 版本:1, 轨:["T-A","T-B"], timeout_s?:1800, notify?:"each"}` | `{ok, job_id, 状态文件}` |
+| `GET /watch/status` | `?job=w-xxxx` | `{ok, job状态, 轨道, 待处理:[...], 未完成:[...]}` |
+| `POST /watch/ack` | `{job:"w-xxxx", 轨:"T-A"}` | `{ok, 剩余待处理:[...], 未完成:[...], 全部已处理}` |
+| `POST /watch/cancel` | `{job}` | `{ok}` |
+| `GET /watch/jobs` | — | `{ok, jobs:[...]}` |
 | `GET /ping?sid=xxx` | — | `{ok, 状态:"running"/"idle", 任务名, sid}` |
 | `POST /delete` | `{sid}` | `{ok}` |
 | `GET /health` | — | `{cdp_alive, 轨表}` |
+
+**`/watch` 不阻塞**：它只创建后台 job 并立刻返回 `job_id`。回执到齐与否由状态文件
+`.parallel-agent/信号/轮次状态/第N轮-v{M}.json` 表达，仲裁者被唤醒后读它。
 
 **话术模板标识**（插件内置，不入参任务内容）：
 - `new_track`：读手册 .parallel-agent/轨道启动手册.md，你是 T-X，待命
@@ -182,8 +194,24 @@ description: "ParallelAgent 仲裁者。用户说'拆开跑/并行/分轨/开 N 
 - `cancel_standby`：本轮无 T-X 任务，待命
 - `arbiter_ii`：读交接手册第 N 版，你是仲裁者 II 世，承接 T-A/B/C 收尾
 - `track_ii`：读交接手册第 N 版，你是 T-X II 世，承接 T-X 身份
+- `watch_notify`：读 .parallel-agent/信号/轮次状态/ 下的待处理状态文件（当前 job {ID}），可用 GET /watch/jobs 查看全部；处理完用 POST /watch/ack 标记
+- `watch_alert`：读 .parallel-agent/信号/轮次状态/ 下的待处理状态文件（当前 job {ID}），有轨超时或失败，优先处理；可用 GET /watch/jobs 查看全部
 
-**版本规则**：同一轮对同一轨反复派发时 `版本` 从 1 递增（v1、v2、…），每次写入新的 `T-X-v{M}.md`，不覆盖历史；`/watch` 的 `版本` 必须与 `/dispatch` 一致。
+**版本规则**：同一轮对同一轨反复派发时 `版本` 从 1 递增（v1、v2、…），每次写入新的 `T-X-v{M}.md`，不覆盖历史；`/watch` 的 `版本` 必须与 `dispatch` 一致。
+
+**多轮并存规则**：不同轨可以处在不同轮次（如 T-A 第 1 轮、T-B 第 3 轮）。此时**每轮一个 job**：
+
+- `POST /watch` 每次只覆盖一个「轮次 + 版本」，跨轮必须分多次提交
+- 相同「轮次 + 版本」重复提交会被幂等复用（返回已有 `job_id`），响应里的 `警告` 会提示缺轨
+- job 已 `done` 后再提交：纯重复只会收到「已处理完毕」警告；带新轨会被**追加到该 job 并恢复运行**，已处理轨不会重复入队
+- 同一轨不得同时挂在两个未清账的 job 上；响应 `警告` 会点名冲突，收到后先处理旧 job 再派新活
+- 所有 job 的状态文件都落在 `信号/轮次状态/`，文件名唯一，互不覆盖
+
+**首次派发前先绑定仲裁者会话**（否则插件不知道通知该发给谁）：
+```javascript
+await fetch('http://127.0.0.1:9318/bind-arbiter', { method: 'POST' });
+// 插件读取当前选中会话 sid 并写入身份表；绑定失败则只写状态文件、不注入通知
+```
 
 **调用示例一（开轨握手：写转达单 → new → 等就绪 → dispatch）**：
 ```javascript
@@ -210,7 +238,7 @@ if (ready.未就绪.length > 0) throw new Error('轨道未就绪，停止派发'
 // 4. 就绪后才派发
 ```
 
-**调用示例二（派发一轮）**：
+**调用示例二（派发一轮并挂上等待）**：
 ```javascript
 // 1. 派发（话术由插件按模板生成，不传任务内容）
 await fetch('http://127.0.0.1:9318/dispatch', {
@@ -219,12 +247,32 @@ await fetch('http://127.0.0.1:9318/dispatch', {
   body: JSON.stringify({ 轨: 'T-A', 轮次: 1, 版本: 1, 模板: 'dispatch_round' })
 });
 
-// 2. 监听回执
-const result = await (await fetch('http://127.0.0.1:9318/watch', {
+// 2. 提交等待 job（立即返回，不阻塞）
+const job = await (await fetch('http://127.0.0.1:9318/watch', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({ 轮次: 1, 版本: 1, 轨: ['T-A','T-B','T-C'], timeout_s: 1800 })
+  body: JSON.stringify({ 轮次: 1, 版本: 1, 轨: ['T-A','T-B','T-C'], notify: 'each' })
 })).json();
+
+// 3. 把 job_id 写进快照，结束回合；回执到齐后插件会注入通知唤醒本会话
+```
+
+**调用示例三（被唤醒后的消费闭环）**：
+```javascript
+// 1. 先拉全量：可能同时存在多个 job（不同轮次/版本）
+const all = await (await fetch('http://127.0.0.1:9318/watch/jobs')).json();
+// all.jobs[].待处理 = 该 job 里待消费的轨号
+
+// 2. 逐个 job、逐条轨道处理：读回执 → 增量实检 → 写快照「已验」栏
+// 3. 标记已处理，并拿到该 job 的剩余队列
+const ack = await (await fetch('http://127.0.0.1:9318/watch/ack', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ job: 'w-7f3a', 轨: 'T-A' })
+})).json();
+
+// 4. 还有剩余 → 继续；全部 job 的待处理都清空 → 按 (轮次, 版本) 分别做整轮评估
+//    仍有未完成轨 → 结束回合，等下次唤醒
 ```
 
 **禁止连发**：同一轨上一条消息的完成信号未到，不得发下一条消息。`/new` 与 `/dispatch` 不得连续调用，`/dispatch` 必须等 `/wait-ready` 返回该轨就绪。
@@ -235,14 +283,28 @@ const result = await (await fetch('http://127.0.0.1:9318/watch', {
 
 ## 9. 实检清单
 
-读回执后，仲裁者独立实检（不采信转述）：
+读回执后，仲裁者独立实检（不采信转述）。v1.2.0 起分两级，**不要每来一轨就做整轮评估**。
+
+### 9.1 单轨增量实检（每次被唤醒、每消费一条）
 
 1. **读回执文件**：`.parallel-agent/回执/第N轮/T-X-v{M}.md`
 2. **验证证据**：打开证据中引用的文件/行号，确认改动存在
 3. **验证边界**：确认改动未越界（只在 T-X 文件领地内）
 4. **验证自检字段**：错误率/健康度/建议是否合理
-5. **记录实检结果**：写快照（轨/状态/欠账）
-6. **收回评估**：按 §5.2 六维判据评估是否收回
+5. **记录**：把该轨结果写入快照「已验」栏（不改轮次结论、不写收回决策）
+6. **标记**：`POST /watch/ack {job, 轨}`，按返回的剩余队列继续或收工
+
+### 9.2 整轮评估（按 job 分别进行）
+
+**不同 job 互不等待**：T-A 的第 1 轮集齐就先评估第 1 轮，不要等 T-B 的第 3 轮。
+
+1. **汇总该 job 的各轨**：确认全部 `处理=done`
+2. **写快照**：轨/状态/欠账（按轮次分栏）
+3. **收回评估**：按 §5.2 六维判据评估是否收回
+4. **自检报告**：§10.2 模板
+5. **决策**：本轮下一批 / 收回 / 收尾
+
+只读回执就 `ack` 视为漏检；`状态=pending`（回执尚未出现）的轨不得 ack。
 
 ---
 
@@ -287,20 +349,27 @@ const result = await (await fetch('http://127.0.0.1:9318/watch', {
 用户："拆开跑"
    → 仲裁者评估（§4）→ 输出决策建议
    → 用户确认
+   → fetch POST /bind-arbiter（首次，绑定通知目标）
    → 写转达/第1轮/T-{A,B,C}-v1.md（每轨一份，首部含收尾判据；可提前落盘）
    → 记 since → fetch POST /new（各轨，只发待命话术）
    → fetch POST /wait-ready（阻塞等 就绪/T-X.md，未就绪则停止）
    → 就绪后 fetch POST /dispatch（各轨）
-   → fetch POST /watch（阻塞等回执）
-   → 回执到齐 → 独立实检 → 写快照
-   → 每轮：自检报告 + 收回评估
+   → fetch POST /watch（每轮一个 job，拿 job_id，写快照）→ 结束回合
+   ── 插件后台 job 轮询回执，写各自的状态文件 ──
+   → 被唤醒（固定话术：有待处理回执）
+   → GET /watch/jobs 拉全量待处理（可能同时有多个 job）
+   → 逐个 job、逐条：读回执 → 增量实检 → 写快照「已验」→ POST /watch/ack
+   → 全部待处理清空 → 按 (轮次, 版本) 分别做整轮评估
+   → 仍有未完成轨 → 结束回合等下次唤醒
    → 收回触发 → 路由收尾 → 写交接手册
 ```
 
 **异常路径**：
 - 派发失败（CDP 找不到锚点）→ 插件返回 `{ok:false}` → 告警用户
-- 任一轨超时 → 插件返回 alert → 人工介入
+- 任一轨超时 → 状态文件置 `timeout` + 处理=pending → 注入告警话术，人工介入
 - 身份断言失败 → 插件 fail-stop，不盲发
+- 仲裁者忙或有草稿 → 插件不注入，只更新状态文件，退避重试
+- 通知重发 2 次仍无 ack → 降级 VS Code 气泡 + alert.signal
 - 弹窗出现 → 插件写 alert.signal，不自动点确认
 
 ---

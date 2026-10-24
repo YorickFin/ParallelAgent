@@ -10,6 +10,8 @@ ParallelAgent 是一套在 Trae Work / VSCode-like IDE 中实现**多 AI 会话�
 - **数据面 100% 文件**：契约、转达、回执、快照、交接手册全部落盘，可溯源、可交接
 - **控制面只传信号**：HTTP / 信号文件仅含 `轨号 + 轮次 + 文件指针`，绝不传任务内容
 - **三阶段生命周期**：奠基串行 → 并行多轨 → 收尾串行，含拆分判据与收回判据
+- **后台等待与唤醒**：`/watch` 提交 job 即返回，不占用 AI 回合；插件在仲裁者空闲且输入框为空时注入固定话术唤醒它
+- **待处理队列**：每轨的 `状态` 与 `处理` 写入 `信号/轮次状态/第N轮-v{M}.json`，仲裁者消费后 `ack` 消账
 - **fail-stop**：找不到锚点 / 身份断言失败立即停机告警，禁止盲点盲发
 
 ```
@@ -19,7 +21,7 @@ ParallelAgent 是一套在 Trae Work / VSCode-like IDE 中实现**多 AI 会话�
       └──── 文件信箱 ◀── 轨道会话 T-A/B/C/D
 ```
 
-## 安装（v1.1.0+）
+## 安装（v1.2.0+）
 
 前置：Windows + Trae CN + Node.js ≥ 18。
 
@@ -47,19 +49,28 @@ parallelagent uninit   # 逆向清理（不动项目层 .parallel-agent/ 信箱�
 ```
 adapters/
 └── trae/                    # Trae Work 适配层（未来可平级扩展 cursor/ 等）
-    ├── docs/                # 方案设计文档（定稿、历史设计、生命周期治理）
+    ├── docs/                # 方案设计文档（v1.2.0 设计、定稿、历史设计、生命周期治理）
     ├── plugin/              # 编排器插件（CDP 执行器 + HTTP 网关 + 文件信箱 watch）
     │   └── parallelagent-orchestrator/
     ├── probes/              # 探针脚本（开发期摸清 Trae/CDP 行为，非产品代码）
     ├── shared/              # 两 Skill 共享的协议 reference 与手册模板
     └── skills/              # 仲裁者/轨道 Skill
+
+packages/
+└── cli/                     # npm 包 parallelagent：一键安装器
+
+test-docs/                   # 版本测试报告归档
 ```
 
 ## 状态
 
 一期（手动触发版）：**已实现并联调通过**。编排器插件覆盖 /health、/new、/ping、/dispatch、/watch、/delete 全流程，多轨并行切换、建轨与删轨的端到端链路均已实测验证。
 
-v1.1.0 新增：版本化信箱（`转达/第N轮/T-X-v{M}.md`）、开轨就绪握手（`就绪/T-X.md` + `POST /wait-ready`）、单轨单在途消息纪律。
+v1.1.0：版本化信箱（`转达/第N轮/T-X-v{M}.md`）、开轨就绪握手（`就绪/T-X.md` + `POST /wait-ready`）、单轨单在途消息纪律。
+
+v1.2.0：**等待机制重构**。`/watch` 由阻塞等待改为提交后台 job 并立即返回，等待状态移入插件进程；新增待处理队列（`信号/轮次状态/第N轮-v{M}.json`）、空闲通知（注入固定话术唤醒仲裁者，注入后切回原会话）、ack 消费闭环、多 job 并存（不同轨可处于不同轮次）。基础测试报告见 [test-docs/v1.2.0基础测试报告.md](test-docs/v1.2.0基础测试报告.md)。
+
+修复：带调试端口重启 Trae 的静默失败（WMI 需 powershell 全路径、脚本需 UTF-8 BOM、控制台窗口隐藏）。
 
 ## 测试验证项目
 

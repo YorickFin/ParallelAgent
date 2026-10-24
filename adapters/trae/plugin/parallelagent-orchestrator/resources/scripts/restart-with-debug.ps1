@@ -1,4 +1,4 @@
-# Copyright 2026 ParallelAgent Contributors
+﻿# Copyright 2026 ParallelAgent Contributors
 # SPDX-License-Identifier: Apache-2.0
 #
 # ParallelAgent：重启 Trae（调试端口由 argv.json 持久化，无需命令行参数）
@@ -6,13 +6,19 @@
 # 由扩展侧传入参数：
 #   -ExePath  Trae 可执行文件绝对路径（扩展用 process.execPath 获取）
 #   -Port     CDP 端口（仅用于重启后连通性自检）
+#   -LogPath  日志路径（扩展传入 globalStorage 下的 restart.log）
 param(
     [Parameter(Mandatory = $true)][string]$ExePath,
-    [Parameter(Mandatory = $true)][int]$Port
+    [Parameter(Mandatory = $true)][int]$Port,
+    [string]$LogPath = (Join-Path $env:TEMP 'parallelagent-restart.log')
 )
 
 $ErrorActionPreference = 'Continue'
-$log = Join-Path $env:TEMP 'parallelagent-restart.log'
+$log = $LogPath
+$logDir = Split-Path $log -Parent
+if ($logDir -and -not (Test-Path $logDir)) {
+    New-Item -ItemType Directory -Force -Path $logDir | Out-Null
+}
 
 "$(Get-Date -Format o) launch, exe=$ExePath port=$Port, wait 8s" | Out-File -FilePath $log -Encoding utf8
 if (-not (Test-Path $ExePath)) { "$(Get-Date -Format o) FATAL: exe not found: $ExePath" | Out-File -FilePath $log -Append -Encoding utf8; exit 1 }

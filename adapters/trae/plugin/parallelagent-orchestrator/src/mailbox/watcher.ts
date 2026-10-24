@@ -65,14 +65,8 @@ export class ReceiptWatcher implements MailboxWatcher {
         ts: new Date().toISOString(),
       });
     } else {
-      writeSignal(this.paths.alertSignal, {
-        round,
-        version,
-        incomplete: result.incomplete,
-        ts: new Date().toISOString(),
-        reason: 'watch_timeout',
-      });
-      logger.warn(`watch 超时: incomplete=${result.incomplete.join(',')}`);
+      // v1.2.0：超时告警由 job 层判定，此处只记录日志，避免轮询探测刷假告警
+      logger.warn(`watch 未完成: incomplete=${result.incomplete.join(',')}`);
     }
 
     return result;
