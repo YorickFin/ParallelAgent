@@ -176,26 +176,37 @@ function readObsolete(extRoot: string): Set<string> {
   }
 }
 
-/** 直接读磁盘：extensions.json 是扩展注册的权威来源 */
-export function readInstalledFromDisk(dataDir: string | null): string | null {
+interface ExtensionEntry {
+  identifier?: { id?: string };
+  version?: string;
+}
+
+function readRegistry(dataDir: string | null): {
+  path: string;
+  list: ExtensionEntry[];
+} | null {
   if (!dataDir) return null;
-  const extRoot = path.join(dataDir, 'extensions');
+  const p = path.join(dataDir, 'extensions', 'extensions.json');
   try {
-    const raw = fs.readFileSync(path.join(extRoot, 'extensions.json'), 'utf8');
-    const list = JSON.parse(raw) as Array<{
-      identifier?: { id?: string };
-      version?: string;
-    }>;
-    const entry = list.find(
-      (e) => e.identifier?.id?.toLowerCase() === EXTENSION_ID,
-    );
-    if (!entry?.version) return null;
-    const dirName = `${EXTENSION_ID}-${entry.version}`.toLowerCase();
-    if (readObsolete(extRoot).has(dirName)) return null;
-    return entry.version;
+    const list = JSON.parse(fs.readFileSync(p, 'utf8')) as ExtensionEntry[];
+    return Array.isArray(list) ? { path: p, list } : null;
   } catch {
     return null;
   }
+}
+
+/** 直接读磁盘：extensions.json 是扩展注册的权威来源 */
+export function readInstalledFromDisk(dataDir: string | null): string | null {
+  const registry = readRegistry(dataDir);
+  if (!registry) return null;
+  const entry = registry.list.find(
+    (e) => e.identifier?.id?.toLowerCase() === EXTENSION_ID,
+  );
+  if (!entry?.version) return null;
+  const extRoot = path.join(dataDir as string, 'extensions');
+  const dirName = `${EXTENSION_ID}-${entry.version}`.toLowerCase();
+  if (readObsolete(extRoot).has(dirName)) return null;
+  return entry.version;
 }
 
 /** 查询已安装扩展版本：磁盘优先，读不到再问 Trae CLI */
@@ -363,4 +374,104 @@ export async function installFromGithubRelease(
   target: TraeTarget,
 ): Promise<{ ok: boolean; output: string }> {
   return downloadAndInstall(RELEASE_LATEST_URL, 'GitHub Release', target);
+}
+
+/**
+ * 卸载扩展。
+ * Trae CLI 的 `--uninstall-extension` 在部分版本上会报
+ * `Cannot read properties of undefined (reading 'isProtectedExtension')`，
+ * 所以先试 CLI，仍登记在册时再走文件级兜底（改 extensions.json + 删目录）。
+ */
+export function uninstallExtension(
+  target: TraeTarget,
+  dataDir: string | null,
+): { ok: boolean; via: 'cli' | 'files' | 'none'; detail: string } {
+  if (!readRegistry(dataDir)) {
+    return { ok: false, via: 'none', detail: '未找到 extensions.json，无法卸载' };
+  }
+
+  const before = readInstalledFromDisk(dataDir);
+  if (!before) {
+    // 目录可能已被标记 obsolete，顺手清理残留
+    removeExtensionFiles(dataDir);
+    return { ok: true, via: 'none', detail: '扩展未安装，仅清理残留文件' };
+  }
+
+  const cli = run(target, ['--uninstall-extension', EXTENSION_ID]);
+  if (!readInstalledFromDisk(dataDir)) {
+    return { ok: true, via: 'cli', detail: '已通过 Trae CLI 卸载' };
+  }
+
+  const removed = removeExtensionFiles(dataDir);
+  if (!readInstalledFromDisk(dataDir)) {
+    return {
+      ok: true,
+      via: 'files',
+      detail: `Trae CLI 卸载不可用（${summarize(cli.output)}），已改为文件级卸载${removed ? `，删除目录 ${removed} 个` : ''}`,
+    };
+  }
+  return {
+    ok: false,
+    via: 'files',
+    detail: `文件级卸载后仍登记在 extensions.json（可能被运行中的 Trae 回写），请关闭 Trae 后重试`,
+  };
+}
+
+/** 取子进程输出里第一行有信息量的内容，用于一句话说明 */
+function summarize(output: string): string {
+  const line = output
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .find(
+      (l) =>
+        l &&
+        !/^exit=/.test(l) &&
+        !/^code=/.test(l) &&
+        !/失败[:：]$/.test(l) &&
+        !/^(stdout|stderr)[:=]/.test(l),
+    );
+  return line ?? '命令失败但无输出';
+}
+
+/** 文件级卸载：删 extensions.json 条目 + 扩展目录 + .obsolete 里的对应项 */
+function removeExtensionFiles(dataDir: string | null): number {
+  const registry = readRegistry(dataDir);
+  if (!registry || !dataDir) return 0;
+  const extRoot = path.join(dataDir, 'extensions');
+
+  const kept = registry.list.filter(
+    (e) => e.identifier?.id?.toLowerCase() !== EXTENSION_ID,
+  );
+  fs.writeFileSync(registry.path, JSON.stringify(kept), 'utf8');
+
+  let removedDirs = 0;
+  for (const name of fs.readdirSync(extRoot)) {
+    if (!name.toLowerCase().startsWith(`${EXTENSION_ID}-`)) continue;
+    try {
+      fs.rmSync(path.join(extRoot, name), { recursive: true, force: true });
+      removedDirs++;
+    } catch {
+      // 被占用时留给下次清理
+    }
+  }
+
+  // 清掉 .obsolete 里指向旧目录的登记，避免重启后误删/误判
+  try {
+    const obsoletePath = path.join(extRoot, '.obsolete');
+    const parsed = JSON.parse(
+      fs.readFileSync(obsoletePath, 'utf8'),
+    ) as Record<string, unknown>;
+    let changed = false;
+    for (const key of Object.keys(parsed)) {
+      if (key.toLowerCase().startsWith(`${EXTENSION_ID}-`)) {
+        delete parsed[key];
+        changed = true;
+      }
+    }
+    if (changed) fs.writeFileSync(obsoletePath, JSON.stringify(parsed), 'utf8');
+  } catch {
+    // .obsolete 不存在或损坏时忽略
+  }
+
+  return removedDirs;
 }
