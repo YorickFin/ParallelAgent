@@ -40,9 +40,11 @@ npx parallelagent@latest init
 其他命令：
 
 ```powershell
-parallelagent doctor   # 环境自检（全绿退出码 0）
-parallelagent uninit   # 卸载扩展 + 清 Skills + 还原 argv.json（不动项目层 .parallel-agent/ 信箱）
+npx parallelagent@latest doctor   # 环境自检（全绿退出码 0）
+npx parallelagent@latest uninit   # 卸载扩展 + 清 Skills + 还原 argv.json（不动项目层 .parallel-agent/ 信箱）
 ```
+
+> 若已全局安装（`npm i -g parallelagent`），可省略 `npx parallelagent@latest` 前缀，直接 `parallelagent doctor` / `parallelagent uninit`。
 
 > `uninit` 卸载扩展时先试 Trae CLI；部分 Trae 版本的 `--uninstall-extension` 会直接报错，
 > 此时自动退回文件级卸载（删 `extensions.json` 条目与扩展目录）。若 Trae 正在运行，
