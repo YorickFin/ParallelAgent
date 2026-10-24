@@ -286,7 +286,7 @@ async function restartWithDebug(
   );
 
   const targetCmd = [
-    `"${psExe}" -NoProfile -ExecutionPolicy Bypass`,
+    `"${psExe}" -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass`,
     `-File "${scriptPath}"`,
     `-ExePath "${exePath}"`,
     `-Port ${cdpPort}`,
