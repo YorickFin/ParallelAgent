@@ -9,6 +9,8 @@ import * as logger from '../logger';
 export interface OrbitRecord {
   sid: string;
   轨: string;
+  角色: 'orbit' | 'arbiter';
+  任务名?: string;
   创建时点: string;
   状态: 'active' | 'deleted';
 }
@@ -29,6 +31,8 @@ export class OrbitTable {
         const raw = fs.readFileSync(this.storePath, 'utf8');
         const records = JSON.parse(raw) as OrbitRecord[];
         for (const r of records) {
+          // 兼容 v1.1.x 旧记录：无 角色 字段时视为普通轨道
+          r.角色 = r.角色 ?? 'orbit';
           this.map.set(r.sid, r);
         }
         logger.info(`身份表已加载: ${this.map.size} 条记录`);
@@ -57,11 +61,40 @@ export class OrbitTable {
     this.map.set(sid, {
       sid,
       轨,
+      角色: 'orbit',
       创建时点: existing?.创建时点 ?? now,
       状态: 'active',
     });
     this.save();
     logger.audit('orbit_upsert', { sid, 轨 });
+  }
+
+  /** 绑定仲裁者会话（同一时刻只保留一个） */
+  bindArbiter(sid: string, 任务名: string): void {
+    for (const r of this.map.values()) {
+      if (r.角色 === 'arbiter' && r.状态 === 'active') {
+        r.状态 = 'deleted';
+      }
+    }
+    const existing = this.map.get(sid);
+    this.map.set(sid, {
+      sid,
+      轨: '仲裁者',
+      角色: 'arbiter',
+      任务名,
+      创建时点: existing?.创建时点 ?? new Date().toISOString(),
+      状态: 'active',
+    });
+    this.save();
+    logger.audit('orbit_bind_arbiter', { sid, 任务名 });
+  }
+
+  /** 读当前仲裁者记录 */
+  getArbiter(): OrbitRecord | undefined {
+    for (const r of this.map.values()) {
+      if (r.角色 === 'arbiter' && r.状态 === 'active') return r;
+    }
+    return undefined;
   }
 
   /** 按 sid 查记录 */
@@ -72,7 +105,7 @@ export class OrbitTable {
   /** 按轨号查记录 */
   getBy轨(轨: string): OrbitRecord | undefined {
     for (const r of this.map.values()) {
-      if (r.轨 === 轨 && r.状态 === 'active') return r;
+      if (r.轨 === 轨 && r.状态 === 'active' && r.角色 === 'orbit') return r;
     }
     return undefined;
   }
@@ -87,8 +120,10 @@ export class OrbitTable {
     }
   }
 
-  /** 列出所有 active 记录 */
+  /** 列出所有 active 轨道记录（不含仲裁者） */
   list(): OrbitRecord[] {
-    return Array.from(this.map.values()).filter((r) => r.状态 === 'active');
+    return Array.from(this.map.values()).filter(
+      (r) => r.状态 === 'active' && r.角色 === 'orbit',
+    );
   }
 }

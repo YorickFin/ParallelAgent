@@ -11,10 +11,12 @@ import { readConfig, ParallelAgentConfig } from './state/config';
 import { CdpClient } from './cdp/cdpClient';
 import { discoverAndConnect, CdpTarget } from './cdp/cdpTarget';
 import { createHttpServer } from './http/server';
-import type { RouteDeps } from './http/routes';
+import { buildPhrase, type RouteDeps } from './http/routes';
 import { OrbitTable } from './state/orbitTable';
 import { MailboxPaths } from './mailbox/paths';
 import { ReceiptWatcher } from './mailbox/watcher';
+import { WatchJobManager } from './mailbox/watchJob';
+import { Notifier } from './cdp/notifier';
 import { pingCdp } from './cdp/precheck';
 import { detectArgvJsonPath } from './state/traePaths';
 import { ensureRemoteDebuggingPort } from './state/argvJson';
@@ -24,6 +26,7 @@ let httpServer: { close(): void } | null = null;
 let cdpClient: CdpClient | null = null;
 let cdpTarget: CdpTarget | null = null;
 let fileWatcher: { dispose(): void } | null = null;
+let watchJobs: WatchJobManager | null = null;
 let orbitTable: OrbitTable | null = null;
 let routeDeps: RouteDeps | null = null;
 let currentConfig: ParallelAgentConfig | null = null;
@@ -107,8 +110,33 @@ async function startOrchestrator(
 
   const projectName =
     vscode.workspace.workspaceFolders?.[0]?.name ?? 'ParallelAgent';
-  routeDeps = { cdp: null, orbit: orbitTable, watcher, projectName };
+
+  // 通知器：空闲 + 输入框为空时注入固定话术唤醒仲裁者
+  const notifier = new Notifier({
+    getCdp: () => routeDeps?.cdp ?? null,
+    getArbiterSid: () => orbitTable?.getArbiter()?.sid ?? null,
+    buildPhrase: (req) =>
+      buildPhrase(req.类型 === 'alert' ? 'watch_alert' : 'watch_notify', {
+        轮次: req.轮次,
+        版本: req.版本,
+        job: req.jobId,
+      }),
+    alertSignalPath: mailboxPaths.alertSignal,
+  });
+
+  // 回执等待 job 管理器：等待状态留在插件进程，不占用 AI 回合
+  const jobs = new WatchJobManager({
+    paths: mailboxPaths,
+    pollIntervalMs: config.pollIntervalMs,
+    defaultTimeoutS: config.watchTimeoutS,
+    notify: (req) => notifier.notify(req),
+    degrade: (req) => void notifier.notify({ ...req, 降级: true }),
+  });
+  watchJobs = jobs;
+
+  routeDeps = { cdp: null, orbit: orbitTable, watcher, jobs, projectName };
   httpServer = createHttpServer(config.httpPort, routeDeps);
+  jobs.start();
 
   // 步骤 2: 再连 CDP；失败只告警，HTTP 网关保持可用
   const connected = await connectCdp(config, routeDeps);
@@ -154,6 +182,9 @@ async function stopOrchestrator(): Promise<void> {
 
   fileWatcher?.dispose();
   fileWatcher = null;
+
+  watchJobs?.dispose();
+  watchJobs = null;
 
   orbitTable = null;
   routeDeps = null;
@@ -274,7 +305,14 @@ function findRestartScript(context: vscode.ExtensionContext): string | null {
 /** A4：幂等创建项目层信箱骨架 + .gitignore（排除临时信号目录） */
 function ensureMailboxSkeleton(mailboxRoot: string): void {
   try {
-    for (const sub of ['转达', '回执', '就绪', '交接手册', '信号']) {
+    for (const sub of [
+      '转达',
+      '回执',
+      '就绪',
+      '交接手册',
+      '信号',
+      path.join('信号', '轮次状态'),
+    ]) {
       fs.mkdirSync(path.join(mailboxRoot, sub), { recursive: true });
     }
     const gitignorePath = path.join(mailboxRoot, '.gitignore');

@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.2.0（设计中，未发布）
+## 1.2.0（已实现，待真机实测与发布）
 
 > 设计见 `adapters/trae/docs/ParallelAgent-v1.2.0设计文档.md`
 
