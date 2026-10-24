@@ -262,28 +262,90 @@ async function restartWithDebug(
     return;
   }
 
-  // 3. WMI 拉起 restart 脚本（脱离 Trae 进程树）
+  // 3. 通过 WMI 拉起 restart 脚本（脱离 Trae 进程树）
   // 必须用 WMI 拉起：child_process.exec 的子进程在 Trae 的 Job Object 里，
   // 脚本杀掉 Trae 时会被连带终止，Start-Process 永远执行不到。
   // WMI 创建的进程父进程是 WmiPrvSE，脱离 Trae 进程树。
+  //
+  // 注意：WMI 服务的环境里没有 PowerShell 的 PATH，CommandLine 直接写
+  // `powershell` 会返回 ReturnValue=9（Path Not Found），脚本根本不会被拉起。
+  // 因此必须用 powershell.exe 的绝对路径。
+  const psExe = detectPowerShellPath();
+  if (!psExe) {
+    vscode.window.showErrorMessage(
+      'ParallelAgent：找不到 powershell.exe，无法执行重启',
+    );
+    return;
+  }
+
   logger.info(`写入完成，带调试端口 ${cdpPort} 重启 Trae...`);
   const exePath = process.execPath;
-  const wmiCmd = [
-    'powershell', '-NoProfile', '-Command',
-    `Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = 'powershell -NoProfile -ExecutionPolicy Bypass -File "${scriptPath}" -ExePath "${exePath}" -Port ${cdpPort}' }`,
+  const logPath = path.join(
+    context.globalStorageUri.fsPath,
+    'restart.log',
+  );
+
+  const targetCmd = [
+    `"${psExe}" -NoProfile -ExecutionPolicy Bypass`,
+    `-File "${scriptPath}"`,
+    `-ExePath "${exePath}"`,
+    `-Port ${cdpPort}`,
+    `-LogPath "${logPath}"`,
   ].join(' ');
 
-  child_process.exec(wmiCmd, (err, stdout, _stderr) => {
-    if (err) {
-      logger.error(`重启失败: ${err.message}`);
-      vscode.window.showErrorMessage(`重启失败: ${err.message}`);
-      return;
+  const wmiScript = [
+    `$ProgressPreference = 'SilentlyContinue'`,
+    `$r = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = '${targetCmd.replace(/'/g, "''")}' }`,
+    `if ($r.ReturnValue -ne 0) { Write-Output ('WMI_FAIL:' + $r.ReturnValue); exit 2 }`,
+    `Write-Output ('WMI_OK:' + $r.ProcessId)`,
+  ].join('\n');
+
+  // EncodedCommand 用 UTF-16LE base64，避开多层引号与中文路径的编码问题
+  const encoded = Buffer.from(wmiScript, 'utf16le').toString('base64');
+
+  child_process.execFile(
+    psExe,
+    ['-NoProfile', '-EncodedCommand', encoded],
+    (err, stdout, stderr) => {
+      const out = (stdout ?? '').trim();
+      if (err) {
+        logger.error(`重启失败: ${err.message}${stderr ? ` / ${stderr}` : ''}`);
+        vscode.window.showErrorMessage(
+          `ParallelAgent 重启失败: ${err.message}`,
+        );
+        return;
+      }
+      if (!/WMI_OK:/.test(out)) {
+        logger.error(`WMI 未能创建重启进程: ${out}`);
+        vscode.window.showErrorMessage(
+          `ParallelAgent 重启失败：WMI 返回 ${out || '未知错误'}` +
+            '（ReturnValue 9 通常表示找不到可执行文件）',
+        );
+        return;
+      }
+      logger.info(`重启脚本已拉起: ${out}，日志 ${logPath}`);
+      vscode.window.showInformationMessage(
+        'ParallelAgent 已写入调试端口配置，将在 8 秒后关闭并重启 Trae',
+      );
+    },
+  );
+}
+
+/** 探测 powershell.exe 绝对路径（WMI 环境下依赖它，不能只写命令名） */
+function detectPowerShellPath(): string | null {
+  const root = process.env.SystemRoot ?? 'C:\\Windows';
+  const candidates = [
+    path.join(root, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe'),
+    path.join(root, 'Sysnative', 'WindowsPowerShell', 'v1.0', 'powershell.exe'),
+  ];
+  for (const p of candidates) {
+    try {
+      if (fs.existsSync(p)) return p;
+    } catch {
+      // 继续尝试下一个
     }
-    logger.info(`重启脚本已通过 WMI 拉起: ${stdout.trim()}`);
-    vscode.window.showInformationMessage(
-      'ParallelAgent 已写入调试端口配置，将在 8 秒后关闭并重启 Trae',
-    );
-  });
+  }
+  return null;
 }
 
 /** A1：从扩展安装目录定位 restart 脚本（随扩展分发，零硬编码） */

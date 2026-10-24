@@ -17,6 +17,8 @@
 - 修复：job 已 `done` 后重复提交会新建 job 并覆盖状态文件；现在复用已完成 job，带新轨时追加并恢复运行，已处理轨不重复入队
 - 修复：通知在切到仲裁者后因草稿/忙而跳过时不切回原会话；现在只要切过会话，无论注入、跳过还是失败都会切回
 - 输入框有草稿时改为 60 秒长退避，避免每 5 秒来回切会话打扰用户
+- 修复「带调试端口重启 Trae」静默失败：WMI 服务的环境没有 PowerShell 的 PATH，`CommandLine` 里只写 `powershell` 会返回 `ReturnValue=9`（Path Not Found），重启脚本从未被拉起。现在改用 `powershell.exe` 绝对路径 + `-EncodedCommand`，并校验 WMI `ReturnValue`，失败时明确报错而不是提示成功
+- `restart-with-debug.ps1` 新增 `-LogPath` 参数，重启日志写入扩展 globalStorage（`restart.log`）
 - 通知话术改为指向 `信号/轮次状态/` 目录并提示 `GET /watch/jobs`；`GET /watch/jobs` 返回每个 job 的 `待处理` 列表
 
 ## 1.1.3
