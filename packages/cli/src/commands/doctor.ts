@@ -5,7 +5,7 @@
 
 import { detectTrae } from '../lib/detectTrae.js';
 import { readArgvJson } from '../lib/argvJson.js';
-import { isExtensionInstalled } from '../lib/installExtension.js';
+import { readInstalledFromDisk } from '../lib/installExtension.js';
 import { missingSkills, pingCdp } from '../lib/verify.js';
 import * as path from 'node:path';
 
@@ -83,21 +83,25 @@ export async function runDoctor(): Promise<void> {
     detail: cdpOk ? `端口 ${CDP_PORT} 可达` : `端口 ${CDP_PORT} 暂不通（重启 Trae 后生效）`,
   });
 
-  // 5. 扩展
-  if (trae.cliCommand) {
-    const installed = isExtensionInstalled(trae.cliCommand);
+  // 5. 扩展（读 extensions.json，不需要拉起 Trae 进程）
+  const extVersion = readInstalledFromDisk(trae.dataDir);
+  if (extVersion) {
     results.push({
       label: '扩展安装',
-      status: installed ? 'OK' : 'FAIL',
-      detail: installed
-        ? 'yorickfin.parallelagent-orchestrator'
-        : '未找到扩展，运行 parallelagent init 安装',
+      status: 'OK',
+      detail: `yorickfin.parallelagent-orchestrator@${extVersion}`,
+    });
+  } else if (!trae.dataDir) {
+    results.push({
+      label: '扩展安装',
+      status: 'FAIL',
+      detail: '无法检测（数据目录未知）',
     });
   } else {
     results.push({
       label: '扩展安装',
       status: 'FAIL',
-      detail: '无法检测（CLI 命令未知）',
+      detail: '未找到扩展，运行 parallelagent init 安装',
     });
   }
 
