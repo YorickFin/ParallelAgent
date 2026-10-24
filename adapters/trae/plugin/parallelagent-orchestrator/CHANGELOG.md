@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.2.1
+
+- 修复 CLI 安装顺序：改为从 Open VSX 查询目标版本并下载 `.vsix` 本地安装，不再先走 Trae 商店源（Trae 默认同步 VS Code Marketplace，扩展未上架时该路径必然失败并多等一轮）
+- 新增 `--from-store`：仅在显式指定时才尝试 Trae 商店源
+- 扩展代码无变更，版本与 CLI 对齐
+
 ## 1.2.0（已实现，待真机实测与发布）
 
 > 设计见 `adapters/trae/docs/ParallelAgent-v1.2.0设计文档.md`
