@@ -8,6 +8,7 @@ import { detectTrae } from '../lib/detectTrae.js';
 import { ensureRemoteDebuggingPort } from '../lib/argvJson.js';
 import {
   installFromOpenVsx,
+  installFromStore,
   installFromGithubRelease,
   isExtensionInstalled,
   getInstalledExtensionVersion,
@@ -22,6 +23,8 @@ const CDP_PORT = 9317;
 interface InitOptions {
   dryRun: boolean;
   traeCli?: string;
+  /** 额外尝试让 Trae 从自己的商店源安装（默认关闭） */
+  fromStore?: boolean;
 }
 
 /** 打印将要执行的动作（dry-run 模式） */
@@ -30,7 +33,7 @@ function dry(label: string): void {
 }
 
 export async function runInit(options: InitOptions): Promise<void> {
-  const { dryRun, traeCli } = options;
+  const { dryRun, traeCli, fromStore = false } = options;
 
   // ── 1. 探测 ──
   if (dryRun) dry('探测 Trae 安装位置、数据目录、CLI 命令');
@@ -60,8 +63,9 @@ export async function runInit(options: InitOptions): Promise<void> {
 
   if (dryRun) {
     dry(`目标扩展版本: ${EXPECTED_EXTENSION_VERSION ?? '未知（跳过版本校验）'}`);
-    dry(`trae --install-extension yorickfin.parallelagent-orchestrator（Open VSX）`);
-    dry(`└─ 版本未达目标则下载 GitHub Release .vsix 重装`);
+    dry(`从 Open VSX 下载对应版本 vsix 后本地安装`);
+    dry(`└─ Open VSX 未达版本则回退 GitHub Release .vsix`);
+    if (fromStore) dry(`└─ 仍失败则尝试 Trae 商店安装`);
   } else {
     const expected = EXPECTED_EXTENSION_VERSION;
     const installed = isExtensionInstalled(cliCommand)
@@ -84,12 +88,19 @@ export async function runInit(options: InitOptions): Promise<void> {
         return !!now && compareVersions(now, expected) >= 0;
       };
 
-      let extResult = installFromOpenVsx(cliCommand);
+      // 主通道：Open VSX 直链下载 vsix，本地安装（不依赖 Trae 的商店源）
+      let extResult = await installFromOpenVsx(cliCommand, expected ?? undefined);
       if (!extResult.ok || !versionOk()) {
-        console.log('  Open VSX 版本未达目标（可能仍在审核），尝试 GitHub Release 兜底...');
+        console.log('  Open VSX 未取得目标版本，尝试 GitHub Release 兜底...');
         extResult = await installFromGithubRelease(cliCommand);
       }
-      if (!extResult.ok) fail(`扩展安装失败:\n${extResult.output}`);
+      if ((!extResult.ok || !versionOk()) && fromStore) {
+        console.log('  仍失败，尝试 Trae 商店安装（--from-store）...');
+        extResult = installFromStore(cliCommand);
+      }
+      if (!extResult.ok && !versionOk()) {
+        fail(`扩展安装失败:\n${extResult.output}`);
+      }
 
       const finalVersion = getInstalledExtensionVersion(cliCommand);
       if (finalVersion && expected && compareVersions(finalVersion, expected) < 0) {
