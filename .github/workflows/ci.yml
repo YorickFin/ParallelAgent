@@ -1,0 +1,53 @@
+# Copyright 2026 ParallelAgent Contributors
+# SPDX-License-Identifier: Apache-2.0
+#
+# PR 与 main 的持续集成：只校验、不发布。
+# 发布由 release.yml 在推送 v* tag 时执行。
+
+name: ci
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  verify-extension:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: adapters/trae/plugin/parallelagent-orchestrator
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: adapters/trae/plugin/parallelagent-orchestrator/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm build
+      - run: npx @vscode/vsce package --out parallelagent-orchestrator.vsix --no-dependencies --allow-missing-repository
+
+  verify-cli:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: packages/cli
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: packages/cli/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm build
