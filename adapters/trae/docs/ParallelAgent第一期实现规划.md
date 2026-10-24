@@ -5,7 +5,7 @@
 
 ## Context
 
-ParallelAgent 是 Trae IDE 的并行多 Agent 开发工具。核心模式：仲裁者 Agent 拆分任务给多个轨道 Agent 并行执行，通过文件信箱传递工作内容，通过自动化编排层传递控制信号，消灭用户人肉转发消息。
+ParallelAgent 是 Trae IDE 的并行多 Agent 开发工具。核心模式：仲裁者 Agent 拆分任务给多个轨道 Agent 并行执行，通过文件信箱传递工作内容，通过自动化编排层传递控制信号，免去用户手工转发消息。
 
 一期范围（手动触发版）：2 个极薄 Skill + 1 个编排器插件 + 共享协议 reference。方案已冻结在 `adapters/trae/docs/ParallelAgent方案定稿.md`，所有设计决策（CDP 操作、DOM 锚点、HTTP API、文件信箱协议、Skill 内容）均已探针验证。本规划只做工程实现。
 
@@ -133,7 +133,7 @@ package.json 关键配置：
 1. **控制面绝不传任务内容**：/dispatch 入参只含轨号+轮次+话术模板标识+文件指针
 2. **身份断言靠 sid 不靠任务名**：24 位 hex sid 是唯一身份，任务名只作软校验
 3. **不硬编码坐标**：所有点击必须 `getBoundingClientRect()` 动态算
-4. **fail-stop**：找不到锚点/身份断言失败 → 立即停机告警，不盲发
+4. **fail-stop**：找不到锚点/身份断言失败 → 立即停机告警，不做未校验的下发
 5. **方案 B 已证伪**：插件绝不直接发会话消息，只走 CDP
 6. **Apache 2.0 版权头**：所有新增源文件需保留版权声明头
 7. **package.json 改动必须 bump + 全量重启 Trae**
