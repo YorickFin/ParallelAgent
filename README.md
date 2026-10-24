@@ -33,14 +33,20 @@ npx parallelagent@latest init
 
 > Trae 的扩展商店默认同步 VS Code Marketplace，不会同步 Open VSX。因此 CLI 不依赖商店：直接从 Open VSX 拉 `.vsix` 本地安装。若确实要让 Trae 从它自己的商店源安装，加 `--from-store`。
 
+**建议在 Trae 终端里执行，或直接把命令交给 Trae 的 Agent 执行。** 独立 PowerShell 7 窗口 / cmd 窗口疑似不会自动继承 TUN 或系统代理，访问 Open VSX、GitHub 会明显变慢甚至 `fetch failed`；此时可先手动下载 `.vsix`，再用 `init --vsix <路径>` 离线安装（不走任何网络请求）。
+
 之后每次启动 Trae（双击图标 / 开始菜单 / 任务栏均可），调试端口自动就绪。在 Trae 中 `Ctrl+Shift+P → ParallelAgent: 启动编排器` 进入工作流。
 
 其他命令：
 
 ```powershell
 parallelagent doctor   # 环境自检（全绿退出码 0）
-parallelagent uninit   # 逆向清理（不动项目层 .parallel-agent/ 信箱）
+parallelagent uninit   # 卸载扩展 + 清 Skills + 还原 argv.json（不动项目层 .parallel-agent/ 信箱）
 ```
+
+> `uninit` 卸载扩展时先试 Trae CLI；部分 Trae 版本的 `--uninstall-extension` 会直接报错，
+> 此时自动退回文件级卸载（删 `extensions.json` 条目与扩展目录）。若 Trae 正在运行，
+> 建议先关闭窗口再执行，避免运行中的实例回写注册表。
 
 > 一期源码安装方式（克隆 + pnpm build）仍保留给开发者，见 `adapters/trae/`。
 

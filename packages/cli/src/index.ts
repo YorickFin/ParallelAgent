@@ -17,7 +17,7 @@ ParallelAgent —— 一键安装 / 自检 / 卸载
 命令：
   init      装扩展 + 铺 Skills + 写 argv.json 调试端口（幂等）
   doctor    环境自检报告（全绿退出码 0，有问题 1）
-  uninit    逆向清理 skills 与 argv.json 配置
+  uninit    卸载扩展 + 清 Skills + 还原 argv.json（幂等）
 
 init 选项：
   --dry-run         只打印将执行的动作，不落地

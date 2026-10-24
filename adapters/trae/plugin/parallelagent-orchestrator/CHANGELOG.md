@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.2.6
+
+- `uninit` 现在会真正卸载扩展：先试 `trae --uninstall-extension`；该命令在部分 Trae 版本上会报 `Cannot read properties of undefined (reading 'isProtectedExtension')`，此时自动退回文件级卸载（删 `extensions.json` 条目、扩展目录、`.obsolete` 中的旧登记）
+- 文件级卸载后仍登记在册时明确报错并提示关闭 Trae 后重试，不再假装成功
+- README 补充安装建议：优先在 Trae 终端执行或交给 Agent 执行；独立 PowerShell 7 / cmd 窗口疑似不走 TUN 或系统代理，易出现下载超时与 `fetch failed`，可改用 `init --vsix` 离线安装
+- 扩展代码无变更，版本与 CLI 对齐
+
 ## 1.2.5
 
 - 修复直连 exe 偶发 `spawnSync ... EACCES`（杀软/占用导致的瞬时拒绝拉起）直接中断安装：现在会重试 3 次（间隔 0.8s / 1.6s），仍失败则自动回退 `.cmd` 经 shell 调用
