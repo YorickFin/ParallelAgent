@@ -72,8 +72,34 @@ function run(cmd: string, args: string[]): { ok: boolean; output: string } {
   }
 }
 
-/** 主通道：trae --install-extension（Trae 默认从 Open VSX 拉取） */
-export function installFromOpenVsx(cliCommand: string): {
+/** 主通道：从 Open VSX 下载 vsix 后本地安装（不依赖 Trae 的商店源） */
+export async function installFromOpenVsx(
+  cliCommand: string,
+  version?: string,
+): Promise<{ ok: boolean; output: string }> {
+  const apiBase = `https://open-vsx.org/api/${EXTENSION_ID.replace('.', '/')}`;
+  const target = version ?? 'latest';
+  try {
+    const metaResp = await fetch(`${apiBase}/${target}`, { redirect: 'follow' });
+    if (!metaResp.ok) {
+      return {
+        ok: false,
+        output: `Open VSX 查询失败: HTTP ${metaResp.status}（${target}）`,
+      };
+    }
+    const meta = (await metaResp.json()) as { files?: { download?: string } };
+    const url = meta.files?.download;
+    if (!url) {
+      return { ok: false, output: `Open VSX 未返回 ${target} 的下载直链` };
+    }
+    return downloadAndInstall(url, 'Open VSX', cliCommand);
+  } catch (e) {
+    return { ok: false, output: `Open VSX 安装失败: ${(e as Error).message}` };
+  }
+}
+
+/** 可选：让 Trae 从它自己的商店源安装（仅当扩展已上架、或用户已配置 Open VSX 源） */
+export function installFromStore(cliCommand: string): {
   ok: boolean;
   output: string;
 } {
@@ -91,7 +117,10 @@ async function downloadAndInstall(
     if (!resp.ok) {
       return { ok: false, output: `${label} 下载失败: HTTP ${resp.status} (${url})` };
     }
-    const vsixPath = path.join(os.tmpdir(), VSIX_FILENAME);
+    const vsixPath = path.join(
+      os.tmpdir(),
+      `parallelagent-orchestrator-${Date.now()}.vsix`,
+    );
     fs.writeFileSync(vsixPath, Buffer.from(await resp.arrayBuffer()));
     return run(cliCommand, ['--install-extension', vsixPath]);
   } catch (e) {
