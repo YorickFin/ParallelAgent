@@ -15,7 +15,10 @@ import {
   isExtensionInstalled,
   getInstalledExtensionVersion,
   compareVersions,
+  cliScriptPath,
+  hasTraeCli,
   EXPECTED_EXTENSION_VERSION,
+  type TraeTarget,
 } from '../lib/installExtension.js';
 import { installSkills } from '../lib/installSkills.js';
 import { pingCdp, missingSkills } from '../lib/verify.js';
@@ -51,15 +54,23 @@ export async function runInit(options: InitOptions): Promise<void> {
   }
   console.log(`  ✓ 数据目录: ${trae.dataDir}`);
 
-  const cliCommand = traeCli ?? trae.cliCommand;
-  if (!cliCommand) {
+  // 显式指定的 --trae-cli 走 .cmd 兜底；否则优先直连 exe（免 cmd.exe 层）
+  const target: TraeTarget = traeCli
+    ? { exePath: null, cliCommand: traeCli }
+    : { exePath: trae.exePath, cliCommand: trae.cliCommand };
+  if (!hasTraeCli(target)) {
     fail(
-      '未找到 Trae CLI 命令（trae-cn / trae）' +
+      '未找到可用的 Trae 入口（exe 或 CLI 命令）' +
         '\n可尝试用 --trae-cli 显式指定命令路径。',
     );
   }
-  console.log(`  ✓ CLI 命令: ${cliCommand}`);
-  if (trae.exePath) console.log(`  ✓ exe 路径: ${trae.exePath}`);
+  const script = cliScriptPath(target.exePath);
+  console.log(
+    script
+      ? `  ✓ CLI 入口: ${target.exePath}（直连 cli.js）`
+      : `  ✓ CLI 入口: ${target.cliCommand}`,
+  );
+  if (!script && trae.exePath) console.log(`  ✓ exe 路径: ${trae.exePath}`);
 
   // ── 2. 装扩展 ──
   console.log('');
@@ -74,11 +85,11 @@ export async function runInit(options: InitOptions): Promise<void> {
       dry(`└─ 失败则回退 GitHub Release .vsix`);
       if (fromStore) dry(`└─ 仍失败则尝试 Trae 商店安装`);
     }
-    dry(`安装后轮询等待版本达标（最多 30 秒，Trae 运行时安装是异步的）`);
+    dry(`安装后轮询 extensions.json 等待版本达标（最多 30 秒，Trae 运行时安装是异步的）`);
   } else {
     const expected = EXPECTED_EXTENSION_VERSION;
-    const installed = isExtensionInstalled(cliCommand)
-      ? getInstalledExtensionVersion(cliCommand)
+    const installed = isExtensionInstalled(target, trae.dataDir)
+      ? getInstalledExtensionVersion(target, trae.dataDir)
       : null;
 
     const satisfied =
@@ -102,21 +113,21 @@ export async function runInit(options: InitOptions): Promise<void> {
       if (vsixPath) {
         attempts.push({
           label: `本地 vsix（${vsixPath}）`,
-          run: () => installFromVsixFile(vsixPath, cliCommand),
+          run: () => installFromVsixFile(vsixPath, target),
         });
       } else {
         attempts.push({
           label: 'Open VSX',
-          run: () => installFromOpenVsx(cliCommand, expected ?? undefined),
+          run: () => installFromOpenVsx(target, expected ?? undefined),
         });
         attempts.push({
           label: 'GitHub Release',
-          run: () => installFromGithubRelease(cliCommand),
+          run: () => installFromGithubRelease(target),
         });
         if (fromStore) {
           attempts.push({
             label: 'Trae 商店',
-            run: () => installFromStore(cliCommand),
+            run: () => installFromStore(target),
           });
         }
       }
@@ -138,8 +149,8 @@ export async function runInit(options: InitOptions): Promise<void> {
           console.log(`  ✗ ${attempt.label} 失败:\n${brief}`);
           continue;
         }
-        // 安装命令返回后 Trae 可能仍在异步写入，必须轮询等待版本变化
-        const v = await waitForVersion(cliCommand, expected, 30_000);
+        // 安装命令返回后 Trae 可能仍在异步写入，轮询 extensions.json 等版本变化
+        const v = await waitForVersion(target, trae.dataDir, expected, 30_000);
         if (v && (!expected || compareVersions(v, expected) >= 0)) {
           finalVersion = v;
           break;
@@ -152,7 +163,8 @@ export async function runInit(options: InitOptions): Promise<void> {
         fail(
           '扩展安装失败。\n' +
             `最后错误: ${lastError}\n` +
-            '可手动下载 vsix 后用 --vsix <路径> 离线安装；网络抖动时也可直接重试。',
+            '可手动下载 vsix 后用 --vsix <路径> 离线安装；网络抖动时也可直接重试。\n' +
+            '若 Trae 正在运行，请先关闭 Trae 再重试（运行中的实例会接管安装请求）。',
         );
       }
       console.log(`  ✓ 扩展已安装 ${finalVersion}`);

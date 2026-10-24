@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.2.4
+
+- 调用链路去掉 `cmd.exe` 与 `trae-cn.cmd` 批处理层：CLI 直接以 `ELECTRON_RUN_AS_NODE=1` 启动 `Trae CN.exe` 并运行 `resources/app/out/cli.js`；探测不到 `cli.js` 时才回退 `.cmd` 经 shell 调用
+- 版本探测改为磁盘优先：直接读 `~/.trae-cn/extensions/extensions.json`（并排除 `.obsolete` 条目），不再靠拉起 Trae 进程跑 `--list-extensions`；`doctor` 同步改为此方式
+- 安装后轮询改为每 300ms 读 `extensions.json`，替代原先每 2 秒拉起一次 Trae 进程（串行时单次约 5 秒）的做法
+- 所有安装命令追加 `--force`，避免已安装同/旧版本时被静默 no-op 后误判为超时
+- 失败输出带子进程 `exit=...` 与原始 stdout/stderr；失败提示新增「若 Trae 正在运行，请先关闭后重试」
+- 扩展代码无变更，版本与 CLI 对齐
+
 ## 1.2.3
 
 - 修复 CLI 安装时报 `ENOENT`：下载的 vsix 放在 `%TEMP%`，安装时文件可能已被清理。改存 `%LOCALAPPDATA%\parallelagent\cache`，安装前校验存在且非空
