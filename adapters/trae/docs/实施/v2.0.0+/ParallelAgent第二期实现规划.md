@@ -1048,6 +1048,21 @@ adapters/trae/
 | D-01 P1 | `OrbitTable.upsert` 在新建同名轨时把旧 active 记录置 `deleted`；新增 `getActiveBy轨` 按创建时点倒序；`/dispatch` 逐个尝试候选 sid，失效记录清理后继续下一条 | 离机脚本：两条 active 时 `getBy轨` 取最新；upsert 新轨后旧记录为 `deleted` |
 | D-03 P2 | `doctor` 台账未回填改为按条目判断，支持后续“回填/已提交 + hash”条目消解历史 `未提交` 措辞 | 临时台账：有回填 → OK；真未回填 → WARN 并列出 ID |
 | D-02 P2 | 未改：Trae CLI 卸载兼容性，文件级兜底已可用 | - |
-| D-04 P3 | 未改：回执计数规范，待后续补 SKILL 约束 | - |
+| D-04 P3 | 2.0.2 已修复：回执补「命令与计数」必填项与计数规则（见 §19.5） | - |
 
 版本：CLI / 扩展 `2.0.1`；本地 vsix `parallelagent-orchestrator-2.0.1.vsix`；已安装，`doctor` 退出码 0。
+
+### 19.5 缺陷修复（2.0.2，2026-10-26）
+
+| 缺陷 | 修复 | 验证 |
+|---|---|---|
+| D-04 P3 | 回执新增「命令与计数」必填项，测试数/通过数/文件数/行数必须引自本次实际命令输出；无输出写“未取得” | `协议.md` §3 模板与计数规则；`track` §4.6/§5；`arbiter` §9.1 实检与快照记录；`台账.md` §6 同步禁止估算计数 |
+
+**落地位置**：
+
+- `shared/references/协议.md`：回执模板新增 `命令与计数`，计数规则升为必填项。
+- `skills/parallelagent-track/SKILL.md`：执行原则第 6 条、回执模板与「证据与计数规则」。
+- `skills/parallelagent-arbiter/SKILL.md`：§9.1 实检时核对计数一致性，并写入快照「已验」栏。
+- `shared/references/台账.md`：§6 证据规则补充“不接受估算或沿用旧结果的计数”。
+
+版本：CLI `2.0.2`；扩展代码未改，版本对齐 `2.0.2`。
