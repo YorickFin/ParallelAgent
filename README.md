@@ -75,6 +75,7 @@ test-docs/                   # 版本测试报告
 - v1.2.0：`/watch` 改为后台 job + 待处理队列 + 空闲唤醒 + ack 闭环，多 job 并存（[测试报告](test-docs/v1.2.0基础测试报告.md)）
 - v1.2.x：安装链路持续加固（Open VSX 直链、稳定缓存、直连 exe、磁盘校验）
 - v2.0.0：入口分流（L0-L4）+ 单轨流程（L0-L3）+ 单轨台账；CLI 安装 3 个 Skill 与共享 reference，`doctor` 增加台账告警
+- v2.0.1：修复同轨历史 active 记录导致 `/dispatch` 命中旧 sid（D-01）；`doctor` 台账未回填判断改为按条目（D-03）
 
 真实多轨验证项目：[slate-desktop](https://github.com/YorickFin/slate-desktop)。
 

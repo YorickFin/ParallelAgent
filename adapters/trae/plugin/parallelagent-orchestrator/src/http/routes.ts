@@ -210,12 +210,12 @@ async function handleDispatch(
     return { ok: false, err: 'CDP 未连接', type: 'cdp_unavailable' };
   }
 
-  // 查轨表
-  const record = deps.orbit.getBy轨(body.轨);
-  if (!record) {
+  // 查轨表：按创建时点倒序，优先最新记录
+  const candidates = deps.orbit.getActiveBy轨(body.轨);
+  if (candidates.length === 0) {
     return {
       ok: false,
-      err: `轨表中无 ${body.轨} 的 sid 记录`,
+      err: `轨表中无 ${body.轨} 的 active sid 记录`,
       type: 'signal_invalid',
     };
   }
@@ -235,23 +235,46 @@ async function handleDispatch(
     return { ok: false, err: '缺少 话术 或 模板 字段', type: 'signal_invalid' };
   }
 
-  // 切轨 → 断言身份 → 清空 → 注入 → 发送
-  await actions.navigateTo(cdp, record.sid);
-  await actions.assertIdentity(cdp, record.sid);
-  await actions.clearInput(cdp);
-  await actions.insertText(cdp, phrase);
-  await actions.send(cdp);
+  // 逐条尝试候选 sid：失效记录（会话已不存在）清理后继续下一条
+  let lastStale: string | undefined;
+  for (const record of candidates) {
+    try {
+      await actions.navigateTo(cdp, record.sid);
+      await actions.assertIdentity(cdp, record.sid);
+    } catch (e) {
+      if (e instanceof ParallelAgentError && e.errorType === 'anchor_not_found') {
+        deps.orbit.remove(record.sid);
+        lastStale = record.sid;
+        logger.warn(`dispatch 跳过失效 sid: ${record.sid}（轨 ${body.轨}）`);
+        continue;
+      }
+      throw e;
+    }
 
-  const sentAt = new Date().toISOString();
-  logger.audit('dispatch', {
-    轨: body.轨,
-    轮次: body.轮次,
-    版本: version,
-    sid: record.sid,
-    模板: body.模板,
-  });
+    await actions.clearInput(cdp);
+    await actions.insertText(cdp, phrase);
+    await actions.send(cdp);
 
-  return { ok: true, sid: record.sid, sent_at: sentAt };
+    const sentAt = new Date().toISOString();
+    logger.audit('dispatch', {
+      轨: body.轨,
+      轮次: body.轮次,
+      版本: version,
+      sid: record.sid,
+      模板: body.模板,
+    });
+
+    return { ok: true, sid: record.sid, sent_at: sentAt };
+  }
+
+  return {
+    ok: false,
+    err:
+      `轨 ${body.轨} 的 sid 记录均已失效` +
+      `${lastStale ? `（最后失效 ${lastStale}）` : ''}` +
+      '；已清理，请重新 /new 开轨',
+    type: 'anchor_not_found',
+  };
 }
 
 /** POST /new — newTask → 注入首条 → 发送 → 落身份表 */

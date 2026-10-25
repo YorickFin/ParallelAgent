@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.0.1
+
+- 修复 D-01：存在历史 active 轨记录时，`/dispatch` 会命中旧 sid 并返回 `anchor_not_found`。现在新建同名轨时旧记录自动置 `deleted`；`/dispatch` 按创建时点倒序尝试候选 sid，失效记录自动清理后继续下一条
+- 修复 D-03：`doctor` 台账检查改为按条目判断真实未回填，已被后续条目回填的历史“未提交”措辞不再误报
+- 扩展与 CLI 版本对齐 2.0.1
+
 ## 2.0.0
 
 > 设计见 `adapters/trae/docs/实施/v2.0.0+/ParallelAgent第二期实现规划.md`

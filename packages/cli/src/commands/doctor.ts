@@ -89,12 +89,36 @@ function checkLedger(): CheckResult {
     };
   }
 
-  if (content.includes('未提交')) {
+  // 未回填检测：按条目判断，忽略已被后续条目回填的历史措辞
+  const parsed = entries.map((text, index) => ({
+    index,
+    id: text.match(/^(S-\d{8}-\d{3})/)?.[1] ?? '',
+    text,
+  }));
+  const hasHash = (text: string): boolean => /[0-9a-f]{7,40}/i.test(text);
+  const isBackfill = (text: string): boolean => /回填|已提交/i.test(text) && hasHash(text);
+
+  const unresolved = parsed.filter((entry) => {
+    if (!entry.id || !/未提交/.test(entry.text)) return false;
+    if (isBackfill(entry.text)) return false;
+
+    const laterFix = parsed.some(
+      (other) =>
+        other.index > entry.index &&
+        other.text.includes(entry.id) &&
+        isBackfill(other.text),
+    );
+    return !laterFix;
+  });
+
+  if (unresolved.length > 0) {
     return {
       label: '单轨台账',
       status: 'WARN',
       advisory: true,
-      detail: '存在未提交条目，请回填 commit hash',
+      detail: `存在 ${unresolved.length} 条未回填 commit 的条目：${unresolved
+        .map((e) => e.id)
+        .join(', ')}`,
     };
   }
 
