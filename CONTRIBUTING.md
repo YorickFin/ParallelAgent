@@ -43,9 +43,11 @@ pnpm --dir packages/cli build
 
 | 改动位置 | 必须同步 |
 |---|---|
-| 控制信号 / HTTP 端点 | `adapters/trae/shared/references/协议.md`、`docs/ParallelAgent方案定稿.md` |
+| 控制信号 / HTTP 端点 | `adapters/trae/shared/references/协议.md`、`adapters/trae/docs/设计/ParallelAgent方案定稿.md` |
+| 分流 / 台账规则 | `adapters/trae/shared/references/分流.md`、`台账.md` |
 | 仲裁者行为 | `adapters/trae/skills/parallelagent-arbiter/SKILL.md` |
 | 轨道行为 | `adapters/trae/skills/parallelagent-track/SKILL.md` |
+| 单轨行为 | `adapters/trae/skills/parallelagent-solo/SKILL.md` |
 | 插件行为 | 插件 `README.md` 与 `CHANGELOG.md` |
 
 ## Pull Request 流程

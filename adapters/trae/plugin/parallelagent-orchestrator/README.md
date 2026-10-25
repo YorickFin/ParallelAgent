@@ -20,7 +20,7 @@ ParallelAgent 的编排器扩展：CDP 执行器 + HTTP 网关 + 文件信箱 wa
 npx parallelagent@latest init
 ```
 
-它会安装本扩展、铺两个全局 Skill，并写入 CDP 调试端口。也可以直接安装本仓库 Release 中的 `.vsix`。
+它会安装本扩展、铺三个全局 Skill 与共享 reference，并写入 CDP 调试端口。也可以直接安装本仓库 Release 中的 `.vsix`。
 
 ## 使用
 

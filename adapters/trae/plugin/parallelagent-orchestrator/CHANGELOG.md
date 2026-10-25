@@ -1,5 +1,19 @@
 # Changelog
 
+## 2.0.0
+
+> 设计见 `adapters/trae/docs/实施/v2.0.0+/ParallelAgent第二期实现规划.md`
+
+- 新增入口分流（L0-L4）：单轨与多轨共用同一份判据，用户不必先说“拆开跑”
+- 新增 `parallelagent-solo` Skill：L0 直做、L1 问清、L2 探路、L3 立规；L4 只写任务卡并移交仲裁者
+- 新增单轨台账 `.parallel-agent/单轨/台账/YYYY-MM.md`：小改动不写 PRD，但每次改动必须留痕（需求/改动/证据/结论）
+- 新增共享 reference `分流.md`、`台账.md`；仲裁者 §0 先分流，§4 强拆判据改为引用同一份文件
+- 协议目录新增 `单轨/`，明确单轨只写单轨目录、多轨只写转达/回执/快照
+- CLI：安装 3 个 Skill；同时安装共享 reference 到 `~/.trae-cn/shared/references/`，修复已装 Skill 引用缺失
+- CLI：`doctor` 增加单轨台账校验（Q3=B：只告警，不改变退出码）
+- CLI：`uninit` 同步清理新增 Skill 与共享 reference
+- 扩展代码无变更，版本与 CLI 对齐
+
 ## 1.2.6
 
 - `uninit` 现在会真正卸载扩展：先试 `trae --uninstall-extension`；该命令在部分 Trae 版本上会报 `Cannot read properties of undefined (reading 'isProtectedExtension')`，此时自动退回文件级卸载（删 `extensions.json` 条目、扩展目录、`.obsolete` 中的旧登记）
@@ -45,7 +59,7 @@
 
 ## 1.2.0（已实现，待真机实测与发布）
 
-> 设计见 `adapters/trae/docs/ParallelAgent-v1.2.0设计文档.md`
+> 设计见 `adapters/trae/docs/实施/v1.0.0+/ParallelAgent-v1.2.0设计文档.md`
 
 - **破坏性变更**：`POST /watch` 由「阻塞等待回执」改为「提交后台 job 并立即返回 `job_id`」，响应不再包含 `{完成, 未完成}`
 - 新增待处理队列：每轨完成/超时写入 `信号/轮次状态/第N轮-v{M}.json`，字段分 `状态`（pending/done/timeout/failed）与 `处理`（null/pending/notified/done）

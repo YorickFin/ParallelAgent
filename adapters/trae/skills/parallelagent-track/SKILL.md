@@ -6,7 +6,7 @@ description: "ParallelAgent 轨道。新会话首条消息'读手册，你是 T-
 # ParallelAgent 轨道 Skill
 
 > 极薄 Skill：只给协议指针、模板、判据。决策由仲裁者做，轨道只执行。
-> 方案全文见 `../../docs/ParallelAgent方案定稿.md`。
+> 方案全文见 `../../docs/设计/ParallelAgent方案定稿.md`。
 
 ---
 

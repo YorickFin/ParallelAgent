@@ -3,11 +3,12 @@
 
 /** `parallelagent doctor`：环境自检报告 */
 
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import { detectTrae } from '../lib/detectTrae.js';
 import { readArgvJson } from '../lib/argvJson.js';
 import { readInstalledFromDisk } from '../lib/installExtension.js';
-import { missingSkills, pingCdp } from '../lib/verify.js';
-import * as path from 'node:path';
+import { missingReferences, missingSkills, pingCdp } from '../lib/verify.js';
 
 const CDP_PORT = 9317;
 
@@ -15,6 +16,93 @@ interface CheckResult {
   label: string;
   status: 'OK' | 'WARN' | 'FAIL';
   detail: string;
+  /** true = 只提示，不影响退出码（Q3=B） */
+  advisory?: boolean;
+}
+
+/** 从当前目录向上查找项目信箱根 */
+function findMailboxRoot(start: string): string | null {
+  let dir = path.resolve(start);
+  while (true) {
+    const candidate = path.join(dir, '.parallel-agent');
+    if (fs.existsSync(candidate)) return candidate;
+    const parent = path.dirname(dir);
+    if (parent === dir) return null;
+    dir = parent;
+  }
+}
+
+/** 单轨台账检查：只告警，不阻断 */
+function checkLedger(): CheckResult {
+  const mailboxRoot = findMailboxRoot(process.cwd());
+  if (!mailboxRoot) {
+    return {
+      label: '单轨台账',
+      status: 'WARN',
+      advisory: true,
+      detail: '未发现 .parallel-agent（尚未使用单轨/多轨）',
+    };
+  }
+
+  const ledgerDir = path.join(mailboxRoot, '单轨', '台账');
+  if (!fs.existsSync(ledgerDir)) {
+    return {
+      label: '单轨台账',
+      status: 'WARN',
+      advisory: true,
+      detail: '未发现 .parallel-agent/单轨/台账（尚未使用单轨）',
+    };
+  }
+
+  const now = new Date();
+  const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  const file = path.join(ledgerDir, `${month}.md`);
+  if (!fs.existsSync(file)) {
+    return {
+      label: '单轨台账',
+      status: 'WARN',
+      advisory: true,
+      detail: `当月台账 ${month}.md 未创建`,
+    };
+  }
+
+  const content = fs.readFileSync(file, 'utf8');
+  const entries = content.split(/^## /m).slice(1);
+  const recent = entries.slice(-5);
+  if (recent.length === 0) {
+    return {
+      label: '单轨台账',
+      status: 'WARN',
+      advisory: true,
+      detail: `${month}.md 尚无条目`,
+    };
+  }
+
+  const required = ['需求', '改动', '证据', '结论'];
+  const incomplete = recent.filter((entry) => !required.every((field) => entry.includes(field)));
+  if (incomplete.length > 0) {
+    return {
+      label: '单轨台账',
+      status: 'WARN',
+      advisory: true,
+      detail: `最近 ${recent.length} 条中有 ${incomplete.length} 条字段不全`,
+    };
+  }
+
+  if (content.includes('未提交')) {
+    return {
+      label: '单轨台账',
+      status: 'WARN',
+      advisory: true,
+      detail: '存在未提交条目，请回填 commit hash',
+    };
+  }
+
+  return {
+    label: '单轨台账',
+    status: 'OK',
+    detail: `${month}.md 正常（${recent.length} 条）`,
+  };
 }
 
 export async function runDoctor(): Promise<void> {
@@ -105,21 +193,33 @@ export async function runDoctor(): Promise<void> {
     });
   }
 
-  // 6. Skills
-  if (trae.dataDir) {
-    const missing = missingSkills(trae.dataDir);
+  // 6. Skills + 共享 reference
+  const dataDir = trae.dataDir;
+  if (dataDir) {
+    const missing = [...missingSkills(dataDir), ...missingReferences(dataDir)];
     if (missing.length === 0) {
-      results.push({ label: 'Skills', status: 'OK', detail: '两个 SKILL.md 就位' });
+      results.push({
+        label: 'Skills/Reference',
+        status: 'OK',
+        detail: '3 个 SKILL.md + 3 个 reference 就位',
+      });
     } else {
       results.push({
-        label: 'Skills',
+        label: 'Skills/Reference',
         status: 'FAIL',
-        detail: `缺失: ${missing.map((p) => path.basename(path.dirname(p))).join(', ')}`,
+        detail: `缺失: ${missing.map((p) => path.relative(dataDir, p)).join(', ')}`,
       });
     }
   } else {
-    results.push({ label: 'Skills', status: 'FAIL', detail: '无法检测（数据目录未知）' });
+    results.push({
+      label: 'Skills/Reference',
+      status: 'FAIL',
+      detail: '无法检测（数据目录未知）',
+    });
   }
+
+  // 7. 单轨台账（只告警，不阻断）
+  results.push(checkLedger());
 
   // ── 输出 ──
   console.log('');
@@ -127,11 +227,21 @@ export async function runDoctor(): Promise<void> {
   console.log('='.repeat(60));
   for (const r of results) {
     const icon = r.status === 'OK' ? '✓' : r.status === 'WARN' ? '⚠' : '✗';
-    console.log(`${icon} ${r.label.padEnd(14)} ${r.status.padEnd(5)} ${r.detail}`);
+    console.log(`${icon} ${r.label.padEnd(16)} ${r.status.padEnd(5)} ${r.detail}`);
   }
   console.log('='.repeat(60));
 
-  const allOk = results.every((r) => r.status === 'OK');
-  console.log(allOk ? '\n结论：全部正常' : '\n结论：存在异常，请运行 parallelagent init 修复');
-  process.exit(allOk ? 0 : 1);
+  const failed = results.some((r) => r.status === 'FAIL');
+  const blockingWarn = results.some((r) => r.status === 'WARN' && !r.advisory);
+  const hasAdvisoryWarn = results.some((r) => r.status === 'WARN' && r.advisory);
+  const ok = !failed && !blockingWarn;
+
+  if (!ok) {
+    console.log('\n结论：存在异常，请运行 parallelagent init 修复');
+  } else if (hasAdvisoryWarn) {
+    console.log('\n结论：安装正常（存在台账提示，不影响退出码）');
+  } else {
+    console.log('\n结论：全部正常');
+  }
+  process.exit(ok ? 0 : 1);
 }

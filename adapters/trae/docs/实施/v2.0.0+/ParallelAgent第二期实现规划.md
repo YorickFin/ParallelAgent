@@ -1,6 +1,6 @@
 # ParallelAgent 第二期实现规划
 
-> 状态：**规划定稿**（2026-10-26），口径已确认（§14），进入实施
+> 状态：**已实施**（2026-10-26），代码与文档完成，待真机实测
 > 前置：[ParallelAgent方案定稿.md](../../设计/ParallelAgent方案定稿.md)、[ParallelAgent生命周期治理初稿.md](../../设计/ParallelAgent生命周期治理初稿.md)、[ParallelAgent-v1.2.0设计文档.md](../v1.0.0+/ParallelAgent-v1.2.0设计文档.md)
 > 版本：**v2.0.0+**
 > 一句话：给 ParallelAgent 补上「入口分流 + 单轨治理 + 结果台账」，形成「一层分流、两层执行」的结构。
@@ -981,22 +981,62 @@ adapters/trae/
 
 | 交付物 | 路径 | 状态 |
 |---|---|---|
-| 第二期实现规划 | `docs/实施/v2.0.0+/ParallelAgent第二期实现规划.md` | 本文档 |
-| 分流 reference | `shared/references/分流.md` | 待实现 |
-| 台账 reference | `shared/references/台账.md` | 待实现 |
-| 单轨 Skill | `skills/parallelagent-solo/SKILL.md` | 待实现 |
-| 仲裁者 Skill 改动 | `skills/parallelagent-arbiter/SKILL.md` | 待修改 |
-| 多轨协议改动 | `shared/references/协议.md` | 仅补单轨目录指针 |
-| 轨道 Skill | `skills/parallelagent-track/SKILL.md` | 不改 |
+| 第二期实现规划 | `docs/实施/v2.0.0+/ParallelAgent第二期实现规划.md` | 已定稿 |
+| 分流 reference | `shared/references/分流.md` | 已实现 |
+| 台账 reference | `shared/references/台账.md` | 已实现 |
+| 单轨 Skill | `skills/parallelagent-solo/SKILL.md` | 已实现 |
+| 仲裁者 Skill 改动 | `skills/parallelagent-arbiter/SKILL.md` | 已修改 |
+| 多轨协议改动 | `shared/references/协议.md` | 已补单轨目录 |
+| 轨道 Skill | `skills/parallelagent-track/SKILL.md` | 未改（仅修正文档路径） |
 | 编排器插件 | `plugin/parallelagent-orchestrator/` | 不改 |
-| CLI 资产 | `packages/cli/assets/skills/` | 待更新 |
-| README / CHANGELOG | 根目录 | 待更新 |
+| CLI 资产 | `packages/cli/assets/skills/` + `assets/shared/references/` | 已更新（3 Skill + 3 reference） |
+| README / CHANGELOG | 根目录 / 插件 CHANGELOG | 已更新 |
 
 ---
 
 ## 18. 版本与发布口径
 
 - 项目整体版本：`v2.0.0`（新增入口分流与单轨模式，属于能力级变更）。
-- 扩展版本：若插件不改，保持现有版本；若追加可选目录创建，按 patch bump。
-- CLI 版本：随项目 `v2.0.0` 发布，`init`/`uninit` 的 Skill 数量变化写入 CHANGELOG。
+- 扩展版本：本次插件代码不改，但版本号与 CLI 对齐到 `2.0.0`，避免 `init` 的版本校验要求一个不存在的扩展版本。
+- CLI 版本：`2.0.0`；`init`/`uninit` 的 Skill 与 reference 数量变化写入 CHANGELOG。
 - 发布前必须完成 §12.2 全部验收，并在 `test-docs/` 增加一份第二期测试报告。
+
+---
+
+## 19. 实施记录（2026-10-26）
+
+### 19.1 已落地
+
+| 类型 | 文件 |
+|---|---|
+| 新增 | `shared/references/分流.md` |
+| 新增 | `shared/references/台账.md` |
+| 新增 | `skills/parallelagent-solo/SKILL.md` |
+| 修改 | `skills/parallelagent-arbiter/SKILL.md`（§0 分流、§4 引用、任务卡入口、术语） |
+| 修改 | `shared/references/协议.md`（单轨目录与目录边界） |
+| 修改 | `skills/parallelagent-track/SKILL.md`（仅文档路径） |
+| 修改 | `packages/cli/src/lib/installSkills.ts`（3 Skill + 3 reference） |
+| 修改 | `packages/cli/src/lib/verify.ts`（reference 校验） |
+| 修改 | `packages/cli/src/commands/init.ts` / `uninit.ts` |
+| 修改 | `packages/cli/src/commands/doctor.ts`（台账告警，Q3=B） |
+| 修改 | `packages/cli/esbuild.build.cjs`（拷贝 shared/references） |
+| 修改 | `packages/cli/package.json`、插件 `package.json`（2.0.0） |
+| 修改 | `README.md`、插件 `CHANGELOG.md` |
+
+### 19.2 已完成的验证
+
+| 项 | 结果 |
+|---|---|
+| `pnpm -C packages/cli typecheck` | 通过 |
+| `pnpm -C packages/cli build` | 通过；assets 生成 3 个 Skill + 3 个 reference |
+| `node packages/cli/dist/index.js --help` | 正常输出 |
+| `doctor` 台账检查（临时目录 + 合法条目 + 子目录向上查找） | `✓ 单轨台账 2026-10.md 正常（1 条）` |
+| `doctor` 缺失检测 | 正确列出 `parallelagent-solo` 与 3 个 reference 缺失 |
+
+### 19.3 待真机验证
+
+1. `npx parallelagent@latest init` 安装 3 个 Skill 与 `~/.trae-cn/shared/references/`。
+2. Skill 激活互斥：普通改动进 solo，明确“拆开跑”进 arbiter。
+3. L0/L1 台账实际写入与会话启动读取。
+4. L4 任务卡移交仲裁者，不重复提问已记录内容。
+5. `uninit` 清理 3 个 Skill 与 3 个 reference，且不误删用户其他文件。
