@@ -77,6 +77,10 @@ git grep -n -I -E '(ghp_|github_pat_|npm_[A-Za-z0-9]{20,}|sk-[A-Za-z0-9]{20,}|BE
 
 # 私有文件与生成物是否被追踪
 git ls-files | Select-String -Pattern '(\.env|\.parallel-agent|\._private|\.log$|\.vsix$)'
+
+# 提交身份与 AI 署名（author/committer 应为本人，且无 AI 共同作者）
+git log -1 --format='A: %an <%ae> | C: %cn <%ce>'
+git log --format='%B' | Select-String 'Co-Authored-By'
 ```
 
 命中项必须处理完再提交；无法确认的，在 PR 描述里说明。
@@ -136,7 +140,18 @@ fix(orchestrator): 通知跳过时切回原会话
 docs(skill): 开轨前强制检查交接手册存在
 ```
 
+### 身份与署名
+
+- author 与 committer 都必须是本人 GitHub 身份，推荐 `<id>+<username>@users.noreply.github.com`。
+- 禁止添加 `Co-Authored-By: Claude`、`Co-Authored-By: Copilot` 等 AI 共同作者署名。
+- Trae 终端会注入 `GIT_COMMITTER_NAME` / `GIT_COMMITTER_EMAIL`，优先级高于 `.git/config`。提交前先覆盖：
+
+```powershell
+$env:GIT_COMMITTER_NAME = '<你的用户名>'
+$env:GIT_COMMITTER_EMAIL = '<id>+<username>@users.noreply.github.com'
+```
+
 ## 报告问题
 
 请附上：Trae 版本、插件版本、`/health` 输出、`ParallelAgent` 输出通道的相关日志片段。
-不要提交 `.parallel-agent/` 里的 `信号/` 目录内容（已在 `.gitignore` 中排除）。
+不要提交 `.parallel-agent/` 下的任何内容（已在 `.gitignore` 中整体排除）。

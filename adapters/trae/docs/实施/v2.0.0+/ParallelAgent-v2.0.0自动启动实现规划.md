@@ -196,7 +196,7 @@ CDP 连接（最多 3 次，间隔 2000ms）
 {
   "pid": 12345,
   "port": 9318,
-  "workspace": "e:\\备份\\project\\Temp",
+  "workspace": "<测试项目>",
   "startedAt": "2026-10-26T08:30:00.000Z",
   "version": "2.0.0"
 }
@@ -243,7 +243,7 @@ CDP 连接（最多 3 次，间隔 2000ms）
 {
   "ok": true,
   "cdp_alive": true,
-  "workspace": "e:\\备份\\project\\Temp",
+  "workspace": "<测试项目>",
   "pid": 12345,
   "轨表": []
 }
@@ -500,7 +500,7 @@ CDP 连接（最多 3 次，间隔 2000ms）
 
 | 步骤 | 结果 | 关键证据 |
 |---|---|---|
-| `GET /health` | PASS | `ok=true`、`cdp_alive=true`、`workspace=e:\备份\project\Temp`、`pid=11248` |
+| `GET /health` | PASS | `ok=true`、`cdp_alive=true`、`workspace=<测试项目>`、`pid=11248` |
 | `POST /new` | PASS | 建轨成功，sid `6adea13010ab37552fa0eca9`；轨道写出 `就绪/T-X.md` |
 | `POST /wait-ready` | PASS | 阻塞 50 s，`就绪=["T-X"]`、`未就绪=[]` |
 | `POST /dispatch` | PASS | `ok=true`、sid 一致；12 s 后写出 T-X 回执，无源码改动、计数一致 |

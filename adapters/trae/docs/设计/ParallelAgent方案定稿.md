@@ -771,7 +771,7 @@ Trae 不暴露：token 用量、上下文压缩次数、上下文剩余容量。
 | 编排器插件 | `extensions/parallelagent-orchestrator/` | 待实现 |
 | CDP 工具（重写） | `scripts/cdp.ps1` | 已删，按 §8.3 重写 |
 | 重启脚本 | `scripts/restart-with-debug.ps1` | 已有 |
-| 探针扩展 | `C:\Users\Anni\.trae-cn\extensions\parallelagent.cmdprobe-0.0.2\` | 已改不自动 run；正式实现后删除 |
+| 探针扩展 | `%USERPROFILE%\.trae-cn\extensions\parallelagent.cmdprobe-0.0.2\` | 已改不自动 run；正式实现后删除 |
 
 ---
 
