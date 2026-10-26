@@ -1,15 +1,15 @@
-# ParallelAgent v2.1.0 实现规划：编排器项目级自动启动
+# ParallelAgent v2.0.0 自动启动实现规划
 
-> 状态：**已实施**（2026-10-26，含 2.1.1 / 2.1.2 / 2.1.3 / 2.1.4 补丁）
+> 状态：**已实施**（2026-10-26，本地测试阶段）
 > 前置：[ParallelAgent第二期实现规划.md](./ParallelAgent第二期实现规划.md)、[ParallelAgent方案定稿.md](../../设计/ParallelAgent方案定稿.md)、[ParallelAgent生命周期治理初稿.md](../../设计/ParallelAgent生命周期治理初稿.md)
-> 版本：**v2.1.0**
+> 版本：**v2.0.0**
 > 一句话：把「ParallelAgent: 启动编排器」从手动命令改为**项目级自动启动**，同时保证单实例、静默失败、状态可观测。
 
 ---
 
 ## 0. 文档定位
 
-本文档是 v2.1.0 的实现规划，只覆盖一件事：
+本文档是 v2.0.0 的实现规划，只覆盖一件事：
 
 - 编排器（`parallelagent-orchestrator` 扩展）在打开项目时自动启动，不再需要用户每次按 `Ctrl+Shift+P`。
 
@@ -29,7 +29,7 @@
 编排器当前默认不启动（`activationEvents` 只有 `onCommand` 两类），实际有两条启动路径：
 
 1. 用户打开 Trae 后执行 `Ctrl+Shift+P` → `ParallelAgent: 启动编排器`。
-2. 仲裁者通过 CDP（9317）合成 `Ctrl+Shift+P` 并选择该命令，等价于手工操作；v2.0.1 回归实测可用。
+2. 仲裁者通过 CDP（9317）合成 `Ctrl+Shift+P` 并选择该命令，等价于手工操作；本地回归实测可用。
 
 因此「忘记启动」不是链路永久不可用，而是需要有人先补一次启动动作：用户记得，或仲裁者每次开轨前主动合成。若两边都没做，L4 的 `/new`、`/dispatch` 会因 HTTP 网关不可达而失败，Trae 重启后的 watch 通知链路也不会自动恢复。
 
@@ -94,7 +94,7 @@
 | 入口 | 可行性 | 问题 |
 |---|---|---|
 | 用户命令 | 现状 | 没解决「不想手动」 |
-| 仲裁者 CDP 合成命令面板 | **已实测可用**（v2.0.1 回归） | 依赖 CDP 端口已配置；合成动作会抢焦点/切换当前窗口；`/json` target 归属不确定 |
+| 仲裁者 CDP 合成命令面板 | **已实测可用**（本地回归） | 依赖 CDP 端口已配置；合成动作会抢焦点/切换当前窗口；`/json` target 归属不确定 |
 | URI handler（`trae://...`） | 需验证 Trae 是否注册协议 | 抢焦点；同项目多窗口归属不确定 |
 | `onStartupFinished` 静默激活 | 可靠 | 本质就是自动启动 |
 
@@ -198,7 +198,7 @@ CDP 连接（最多 3 次，间隔 2000ms）
   "port": 9318,
   "workspace": "e:\\备份\\project\\Temp",
   "startedAt": "2026-10-26T08:30:00.000Z",
-  "version": "2.1.0"
+  "version": "2.0.0"
 }
 ```
 
@@ -297,7 +297,7 @@ CDP 连接（最多 3 次，间隔 2000ms）
 
 ### 5.10 兜底：仲裁者 CDP 合成启动
 
-自动启动未启用或失败时，仲裁者仍可沿用现有路径：通过 CDP（9317）合成 `Ctrl+Shift+P` 并选择「ParallelAgent: 启动编排器」（v2.0.1 回归已实测可用）。本期不修改该路径，仅作为兜底：
+自动启动未启用或失败时，仲裁者仍可沿用现有路径：通过 CDP（9317）合成 `Ctrl+Shift+P` 并选择「ParallelAgent: 启动编排器」（本地回归已实测可用）。本期不修改该路径，仅作为兜底：
 
 - 自动启动成功 → 仲裁者无需合成，流程少一步。
 - 自动启动被禁用或失败 → 仲裁者按现有方式补一次启动动作。
@@ -313,7 +313,7 @@ CDP 连接（最多 3 次，间隔 2000ms）
 
 | 文件 | 变更 |
 |---|---|
-| `package.json` | `activationEvents` 增加 `onStartupFinished`；新增 `parallelagent.autoStart` 配置；版本 `2.1.0` |
+| `package.json` | `activationEvents` 增加 `onStartupFinished`；新增 `parallelagent.autoStart` 配置；版本 `2.0.0` |
 | `src/state/config.ts` | `ParallelAgentConfig` 增加 `autoStart: 'auto' \| 'on' \| 'off'`；增加 `workspaceRoot` 字段 |
 | `src/state/projectLock.ts` | **新增**：锁文件读写、PID 存活检测、路径归一化 |
 | `src/http/server.ts` | `createHttpServer` 返回 `{ close, ready }`；`listen` 错误通过 `ready` 拒绝，调用方不再只能读日志 |
@@ -324,9 +324,9 @@ CDP 连接（最多 3 次，间隔 2000ms）
 
 | 文件 | 变更 |
 |---|---|
-| `packages/cli/package.json` | 版本 `2.1.0`（与扩展对齐） |
-| `adapters/trae/plugin/parallelagent-orchestrator/CHANGELOG.md` | 新增 `2.1.0` 条目 |
-| `README.md` | 版本列表增加 v2.1.0；安装说明补充「项目存在 `.parallel-agent/` 时自动启动」 |
+| `packages/cli/package.json` | 版本 `2.0.0`（与扩展对齐） |
+| `adapters/trae/plugin/parallelagent-orchestrator/CHANGELOG.md` | 新增 `2.0.0` 条目 |
+| `README.md` | 版本列表增加 v2.0.0；安装说明补充「项目存在 `.parallel-agent/` 时自动启动」 |
 | 插件 `README.md` | 补充自动启动策略、状态栏、单实例限制 |
 | 本文档 | 实施后回写状态与实测结果 |
 
@@ -360,7 +360,7 @@ CDP 连接（最多 3 次，间隔 2000ms）
 ### C. 发布与文档
 
 8. 更新 CHANGELOG / README / 插件 README。
-9. 版本对齐：CLI `2.1.0`、扩展 `2.1.0`；重新生成 vsix。
+9. 版本对齐：CLI `2.0.0`、扩展 `2.0.0`；重新生成 vsix。
 10. `typecheck` + `build` + `init --vsix` 验证。
 
 ---
@@ -426,9 +426,9 @@ CDP 连接（最多 3 次，间隔 2000ms）
 
 ## 12. 版本与发布口径
 
-- 项目版本：`2.1.0`（新增自动启动能力，属功能级变更）。
+- 项目版本：`2.0.0`（新增自动启动能力，属功能级变更）。
 - CLI 与扩展同版本发布，`EXPECTED_EXTENSION_VERSION` 依赖 CLI 自身版本。
-- 发布前必须完成 §8 全部用例，并在 `test-docs/` 增加 `v2.1.0基础测试报告.md`。
+- 发布前必须完成 §8 全部用例，并在 `test-docs/` 增加 `v2.0.0基础测试报告.md`。
 - 回滚方式：配置 `parallelagent.autoStart = "off"` 即可退回手动启动行为，无需降级版本。
 
 ---
@@ -463,14 +463,14 @@ CDP 连接（最多 3 次，间隔 2000ms）
 | 类型 | 文件 |
 |---|---|
 | 新增 | `src/state/projectLock.ts` |
-| 修改 | 插件 `package.json`（`onStartupFinished`、`autoStart` 配置、版本 2.1.0） |
+| 修改 | 插件 `package.json`（`onStartupFinished`、`autoStart` 配置、版本 2.0.0） |
 | 修改 | `src/state/config.ts`（`autoStart`、`workspaceRoot`） |
 | 修改 | `src/http/server.ts`（`HttpServerHandle.ready`） |
 | 修改 | `src/http/routes.ts`（`/health` 增加 `workspace`、`pid`） |
 | 修改 | `src/extension.ts`（自动启动、状态栏、单实例锁、静默失败、停止语义、CDP 重试） |
 | 修改 | 插件 `CHANGELOG.md` / 插件 `README.md` / 根 `README.md` |
-| 修改 | `packages/cli/package.json`（2.1.0） |
-| 产物 | `parallelagent-orchestrator-2.1.0.vsix` |
+| 修改 | `packages/cli/package.json`（2.0.0） |
+| 产物 | `parallelagent-orchestrator-2.0.0.vsix` |
 
 ### 15.2 已完成的验证
 
@@ -480,8 +480,8 @@ CDP 连接（最多 3 次，间隔 2000ms）
 | 插件 `build` | 通过 |
 | CLI `typecheck` / `build` | 通过 |
 | 锁模块离线测试（esbuild 打包 + stub logger） | 通过：读写回环、PID 存活/不存在、路径归一化、损坏锁返回 null、`clearLock` |
-| `init --vsix ...2.1.0.vsix` | 扩展 2.1.0；3 Skill + 3 reference 就位 |
-| vsix 内容核对 | manifest 与 `package.json` 均为 2.1.0；`dist/extension.js` 含 `orchestrator.lock`、`auto_start_skip` |
+| `init --vsix ...2.0.0.vsix` | 扩展 2.0.0；3 Skill + 3 reference 就位 |
+| vsix 内容核对 | manifest 与 `package.json` 均为 2.0.0；`dist/extension.js` 含 `orchestrator.lock`、`auto_start_skip` |
 
 ### 15.3 真机验证结果（2026-10-26，用户实测）
 
@@ -512,7 +512,7 @@ CDP 连接（最多 3 次，间隔 2000ms）
 
 - **现象**：首次 `/new` 返回 `anchor_not_found`。编排器启动时 `GET /json` 中尚无 `solo-lite` 的 Agent 页，`filterWorkTarget` 回退到 title 含「管理员」的 IDE 工作台页；该页没有任务列表。重跑一次「ParallelAgent: 启动编排器」后 CDP 重连到 Agent 页，后续全部通过。
 - **根因**：`filterWorkTarget` 的兜底分支不区分「Work 对话页」与「IDE 工作台页」；自动启动发生在 `onStartupFinished`，早于用户打开 Agent 页。
-- **影响**：首次 L4 需要额外执行一次启动命令；不影响 2.1.0 的自动启动、单实例与状态栏行为。
+- **影响**：首次 L4 需要额外执行一次启动命令；不影响 2.0.0 的自动启动、单实例与状态栏行为。
 - **候选修复（不纳入本期，待确认）**：
   1. 启动时若只有非 `solo-lite` 页，先等待一段时间（如 30 s）再回退，期间出现 Agent 页则连它。
   2. 连到兜底页后后台轮询，发现 `solo-lite` 页出现即自动重连。
@@ -522,41 +522,40 @@ CDP 连接（最多 3 次，间隔 2000ms）
 
 ### 15.6 待验证项
 
-1. Agent 页晚于编排器启动时的 CDP target 重选（见 §15.5，已在 2.1.1 修复，待真机复测）。
+1. Agent 页晚于编排器启动时的 CDP target 重选（见 §15.5，已在本轮修复，待真机复测）。
 2. `onStartupFinished` 的 2500ms 延迟在冷启动与热启动下是否都足够（当前实测通过，保留观察）。
 
 ---
 
-## 16. 2.1.1 补丁记录（2026-10-26）
+## 16. 补丁记录：Agent 页等待窗口
 
 | 缺陷 | 修复 | 验证 |
 |---|---|---|
 | 自动启动首连错页：Agent 页晚于编排器启动时，CDP 回退到 IDE 工作台页，首次 `/new` 返回 `anchor_not_found` | 自动启动只接受 `url` 含 `solo-lite` 的 Agent 页，等待约 30 秒（15 次 × 2 秒）；超时保持 HTTP 可用、状态栏提示打开 Agent 页；手动启动保留「管理员」兜底 | `cdpTarget.filterWorkPageOnly`；`extension` 自动路径 `requireWorkPage=true`、`cdpRetries=15`；插件 `typecheck` / `build` 通过 |
 
-- 版本：扩展 / CLI `2.1.1`；vsix `parallelagent-orchestrator-2.1.1.vsix`。
-- 待真机复测：先启动编排器、后打开 Agent 页，确认 30 秒内自动连上；以及超时路径的状态栏提示。
-- **后续修正**：真机发现只认 `url` 含 `solo-lite` 会漏掉 `Agent [管理员]` 形态，见 §17。
+- 版本：扩展 / CLI `2.0.0`（本地测试）。
+- 后续修正：真机发现只认 `url` 含 `solo-lite` 会漏掉 `Agent [管理员]` 形态，见 §17。
 
 ---
 
-## 17. 2.1.2 补丁记录（2026-10-26）
+## 17. 补丁记录：Agent 页识别
 
 | 缺陷 | 修复 | 验证 |
 |---|---|---|
-| 2.1.1 的 Agent 页识别过窄：只认 `url` 含 `solo-lite`，实际 Agent 页 target 常显示为 `Agent [管理员]`，被过滤后自动启动空等 30 秒；手动重连经旧兜底反而成功，表现为「自动连不上、手动能连上」 | 新增 `isAgentTarget`：`url` 含 `solo-lite`，或 title 以 `Agent` 开头且不含 `TRAE CN`；手动与自动共用该判定，旧版兜底排除 IDE 工作台页 | `audit.log` 历史 target 形态（`Agent [管理员]` / `<项目名> - TRAE CN [管理员]` / `solo-lite.html`）；插件 `typecheck` / `build` 通过；待真机复测 |
+| 早期本地实现的 Agent 页识别过窄：只认 `url` 含 `solo-lite`，实际 Agent 页 target 常显示为 `Agent [管理员]`，被过滤后自动启动空等 30 秒；手动重连经旧兜底反而成功，表现为「自动连不上、手动能连上」 | 新增 `isAgentTarget`：`url` 含 `solo-lite`，或 title 以 `Agent` 开头且不含 `TRAE CN`；手动与自动共用该判定，旧版兜底排除 IDE 工作台页 | `audit.log` 历史 target 形态（`Agent [管理员]` / `<项目名> - TRAE CN [管理员]` / `solo-lite.html`）；插件 `typecheck` / `build` 通过；待真机复测 |
 
-- 版本：扩展 / CLI `2.1.2`；vsix `parallelagent-orchestrator-2.1.2.vsix`。
+- 版本：扩展 / CLI `2.0.0`（本地测试）。
 - 观测增强：`cdp_connect` 记录 `url`，下次可直接确认 Agent 页 target 的 url 形态。
 
 ---
 
-## 18. 2.1.3 补丁记录（2026-10-26）
+## 18. 补丁记录：手动重连窗口
 
 | 缺陷 | 修复 | 验证 |
 |---|---|---|
 | 自动启动 30 秒超时后，打开 Agent 页再点状态栏重连仍失败并提示「CDP 仍不可达」：手动路径只重试 1 次，Agent 页 target 尚未进入 `/json` 时一次瞬败 | 手动 `parallelagent.start` 的 CDP 重试从 1 次提升到 10 次（约 20 秒）；点击后状态栏立即显示「启动中」；连接失败写入 `cdp_connect_fail` 审计 | `typecheck` / `build` 通过；待真机复测 |
 
-- 版本：扩展 / CLI `2.1.3`；vsix `parallelagent-orchestrator-2.1.3.vsix`。
+- 版本：扩展 / CLI `2.0.0`（本地测试）。
 - 诊断增强：`cdp_connect_fail` 的 `err` 可区分「枚举 targets 失败（端口不通）」「找不到 Agent 页 target（页面未就绪）」「WebSocket 连接失败」。
 
 ---
@@ -579,30 +578,30 @@ CDP 连接（最多 3 次，间隔 2000ms）
 2. 旧 Trae 实例退出后端口不会立即释放；新实例在窗口期内启动即绑定失败。
 3. 因此启动间隔过短时，新实例从启动起就没有 9317，直到下次完整重启。
 
-**结论**：此前观察到的自动启动不稳定，主因是测试期间频繁快速重启 Trae，而非自动启动逻辑或 target 识别缺陷。2.1.1–2.1.3 的 target 识别与重连窗口修正仍然有效，但无法修复 Trae 的一次性端口绑定。
+**结论**：此前观察到的自动启动不稳定，主因是测试期间频繁快速重启 Trae，而非自动启动逻辑或 target 识别缺陷。本地测试阶段的 target 识别与重连窗口修正仍然有效，但无法修复 Trae 的一次性端口绑定。
 
 **操作约束**：
 
 - 绑定失败的实例不会自愈，继续等待或重试无效；**下次完整重启即可恢复**，无需固定等待 60 秒。
 - 避免在同一实例上反复重试；重启时确认所有 `Trae CN.exe` 进程已退出，避免新旧实例并存。
-- 2.1.4 起，检测到 `ECONNREFUSED` 会直接提示「立即重启 / 忽略」。
+- 本轮起，检测到 `ECONNREFUSED` 会直接提示「立即重启 / 忽略」。
 
 **诊断工具**：`%TEMP%\pa-9317-sampler*.log`（后台 WMI 独立进程，每 2 秒记录端口状态与主进程 pid）。
 
 ---
 
-## 20. 2.1.4 补丁记录（2026-10-26）
+## 20. 补丁记录：端口绑定失败提示
 
 | 缺陷 | 修复 | 验证 |
 |---|---|---|
-| CDP 端口未监听（`ECONNREFUSED`）时缺少可操作的恢复入口，用户只能自行排查重启 | 识别 `ECONNREFUSED` 后弹出「频繁重启导致 CDP 端口绑定失败，下次重启后恢复」，提供「立即重启 / 忽略」；「立即重启」复用重启脚本并传 `-DelaySeconds 0`；提示 30 秒冷却 | `typecheck` / `build` 通过；待真机复测 |
+| CDP 端口未监听（`ECONNREFUSED`）时缺少可操作的恢复入口，用户只能自行排查重启 | 识别 `ECONNREFUSED` 后弹出「频繁重启导致 CDP 端口绑定失败，下次重启后恢复」，提供「立即重启 / 忽略」；「立即重启」复用重启脚本立即执行；提示 30 秒冷却 | `typecheck` / `build` 通过；待真机复测 |
 
-- 版本：扩展 / CLI `2.1.4`；vsix `parallelagent-orchestrator-2.1.4.vsix`。
-- 行为：命令面板的「带调试端口重启 Trae」仍等待 8 秒；错误提示中的「立即重启」不等待（2.1.5 起统一立即执行，见 §21）。
+- 版本：扩展 / CLI `2.0.0`（本地测试）。
+- 行为：所有重启入口统一立即执行，无 8 秒等待（见 §21）。
 
 ---
 
-## 21. 2.1.5 补丁记录（2026-10-26）
+## 21. 补丁记录：重启统一立即执行
 
 | 变更 | 说明 |
 |---|---|
@@ -610,4 +609,4 @@ CDP 连接（最多 3 次，间隔 2000ms）
 | 重启脚本 | 删除 `-DelaySeconds` 参数与等待；日志改为 `restart immediately` |
 | 提示文案 | 统一为「ParallelAgent 已写入调试端口配置，正在重启 Trae」 |
 
-- 版本：扩展 / CLI `2.1.5`；vsix `parallelagent-orchestrator-2.1.5.vsix`。
+- 版本：扩展 / CLI `2.0.0`（本地测试）。
