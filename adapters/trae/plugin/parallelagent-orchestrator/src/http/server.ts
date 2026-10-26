@@ -12,6 +12,12 @@ import * as logger from '../logger';
 
 const MAX_BODY_BYTES = 1024 * 1024; // 1MB
 
+export interface HttpServerHandle {
+  close(): void;
+  /** listen 成功 resolve；端口失败（如 EADDRINUSE）reject */
+  ready: Promise<void>;
+}
+
 /**
  * 创建 HTTP 网关
  * 监听 127.0.0.1:port，body 解析（1MB 限制），统一错误包装
@@ -19,7 +25,7 @@ const MAX_BODY_BYTES = 1024 * 1024; // 1MB
 export function createHttpServer(
   port: number,
   deps: RouteDeps,
-): { close(): void } {
+): HttpServerHandle {
   const routes = buildRoutes();
 
   const server = http.createServer(async (req, res) => {
@@ -106,18 +112,34 @@ export function createHttpServer(
     }
   });
 
-  server.listen(port, '127.0.0.1', () => {
-    logger.info(`HTTP 网关监听 127.0.0.1:${port}`);
-  });
+  let settled = false;
+  const ready = new Promise<void>((resolve, reject) => {
+    server.on('error', (err: NodeJS.ErrnoException) => {
+      if (!settled) {
+        settled = true;
+        logger.error(`HTTP 服务器启动失败: ${err.message}`);
+        reject(err);
+        return;
+      }
+      logger.error(`HTTP 服务器错误: ${err.message}`);
+    });
 
-  server.on('error', (err: NodeJS.ErrnoException) => {
-    logger.error(`HTTP 服务器错误: ${err.message}`);
+    server.listen(port, '127.0.0.1', () => {
+      settled = true;
+      logger.info(`HTTP 网关监听 127.0.0.1:${port}`);
+      resolve();
+    });
   });
 
   return {
     close: () => {
-      server.close();
+      try {
+        server.close();
+      } catch {
+        // 未成功监听时 close 可能抛错，忽略
+      }
       logger.info('HTTP 网关已关闭');
     },
+    ready,
   };
 }

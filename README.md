@@ -77,6 +77,7 @@ test-docs/                   # 版本测试报告
 - v2.0.0：入口分流（L0-L4）+ 单轨流程（L0-L3）+ 单轨台账；CLI 安装 3 个 Skill 与共享 reference，`doctor` 增加台账告警
 - v2.0.1：修复同轨历史 active 记录导致 `/dispatch` 命中旧 sid（D-01）；`doctor` 台账未回填判断改为按条目（D-03）
 - v2.0.2：回执新增「命令与计数」必填项，计数必须引自实际命令输出（D-04）
+- v2.1.0：编排器项目级自动启动（存在 `.parallel-agent/` 时自动启动）+ 项目级单实例锁 + 静默失败状态栏
 
 真实多轨验证项目：[slate-desktop](https://github.com/YorickFin/slate-desktop)。
 

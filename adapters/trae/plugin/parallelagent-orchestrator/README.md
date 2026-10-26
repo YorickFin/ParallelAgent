@@ -24,9 +24,18 @@ npx parallelagent@latest init
 
 ## 使用
 
-1. 重启 Trae
-2. `Ctrl+Shift+P` → `ParallelAgent: 启动编排器`
-3. 访问 `http://127.0.0.1:9318/health` 确认网关可用
+安装后重启 Trae：
+
+- 项目根存在 `.parallel-agent/` 时，编排器自动启动（默认 `autoStart=auto`），无需手动执行命令。
+- 其他项目默认不启动，也不会创建 `.parallel-agent/` 目录。
+- `Ctrl+Shift+P` → `ParallelAgent: 启动编排器` 可手动启动；`ParallelAgent: 停止编排器` 停止并让本窗口不再自动启动。
+- 访问 `http://127.0.0.1:9318/health` 确认网关可用。
+
+**单实例**：同一项目在多个窗口打开时，只有先启动的窗口运行编排器，其余窗口状态栏显示「已在其他窗口运行」。锁文件为 `.parallel-agent/信号/orchestrator.lock`。
+
+**状态栏**：显示 运行中 / CDP 未连接 / 已在其他窗口运行 / 端口被占用 / 已停止；点击可手动启动。自动启动失败不弹窗。
+
+**已知限制**：同一时间只支持一个项目占用 9318；多项目并行未支持。
 
 ## HTTP 接口
 
@@ -50,6 +59,7 @@ npx parallelagent@latest init
 | 配置项 | 默认值 | 说明 |
 |---|---|---|
 | `parallelagent.cdpPort` | `9317` | Trae 的 CDP 调试端口 |
+| `parallelagent.autoStart` | `auto` | 自动启动策略：`auto` 项目有 `.parallel-agent/` 才启动；`on` 总是启动；`off` 仅手动 |
 | `parallelagent.httpPort` | `9318` | HTTP 网关端口 |
 | `parallelagent.mailboxRoot` | `.parallel-agent` | 文件信箱根目录 |
 | `parallelagent.pollIntervalMs` | `1000` | 回执轮询间隔 |

@@ -95,6 +95,8 @@ export interface RouteDeps {
   jobs: WatchJobManager | null;
   /** 目标项目名（新建轨道会话时自动挂该项目） */
   projectName: string;
+  /** 当前窗口工作区根绝对路径（空窗口为空字符串），/health 诊断用 */
+  workspace: string;
 }
 
 // ── HTTP body 解析结果 ────────────────────────────────
@@ -148,6 +150,8 @@ async function handleHealth(
   return {
     ok: true,
     cdp_alive: cdpAlive,
+    workspace: deps.workspace,
+    pid: process.pid,
     轨表: orbits,
   };
 }
