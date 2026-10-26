@@ -50,6 +50,39 @@ pnpm --dir packages/cli build
 | 单轨行为 | `adapters/trae/skills/parallelagent-solo/SKILL.md` |
 | 插件行为 | 插件 `README.md` 与 `CHANGELOG.md` |
 
+## 敏感信息自查（提交前必做）
+
+提交前确认没有把本机环境或私人数据带进仓库。
+
+### 禁止提交
+
+| 类别 | 示例 | 处理 |
+|---|---|---|
+| 密钥与凭据 | API key、access token、私钥、`.npmrc` 中的 authToken | 已泄露的先撤销并轮换，不能只删文件 |
+| 环境文件 | `.env`、`.env.*`、`*.pem`、`*.key` | 已由 `.gitignore` 排除 |
+| 运行产物 | `.parallel-agent/`（契约、台账、回执、信号）、日志、`*.vsix`、`dist/` | 已由 `.gitignore` 排除 |
+| 私人内容 | `._private/` 下的博客/投稿草稿、客户或未公开项目资料 | 不要使用 `git add -f` 强行加入 |
+| 本机信息 | `C:\Users\<name>`、`E:\...` 绝对路径、系统用户名、机器名、PID、会话标题 | 替换为 `<repo>`、`%USERPROFILE%`、`<Trae安装目录>` 等占位符 |
+
+### 提交前扫描
+
+在仓库根目录执行：
+
+```powershell
+# 绝对路径（按实际盘符调整）
+git grep -n -I -E '(C:\\Users\\|D:\\Programs\\|E:\\)'
+
+# 常见密钥形态
+git grep -n -I -E '(ghp_|github_pat_|npm_[A-Za-z0-9]{20,}|sk-[A-Za-z0-9]{20,}|BEGIN [A-Z ]*PRIVATE KEY)'
+
+# 私有文件与生成物是否被追踪
+git ls-files | Select-String -Pattern '(\.env|\.parallel-agent|\._private|\.log$|\.vsix$)'
+```
+
+命中项必须处理完再提交；无法确认的，在 PR 描述里说明。
+
+> 删除文件不会清理 git 历史。误提交过敏感信息时，先轮换凭据，再评估是否需要改写历史。
+
 ## Pull Request 流程
 
 1. 从最新 `main` 切出工作分支
@@ -64,7 +97,17 @@ pnpm --dir packages/cli build
 
 ## 发布流程（仅维护者）
 
-发布不是 PR 的一部分，由维护者在合并后单独执行：
+发布不是 PR 的一部分，由维护者在合并后单独执行。
+
+### 发布前复核
+
+- [ ] 全仓无本机绝对路径、系统用户名、真实邮箱、PID、会话标题
+- [ ] `git ls-files` 无 `.env`、`.npmrc`、`.parallel-agent/`、日志、`.vsix`
+- [ ] npm 包与 vsix 的发布内容不含私人资料或测试草稿
+- [ ] 已确认历史遗留项：删除的文件仍可从旧 commit 取出，必要时评估改写历史
+- [ ] GitHub 仓库已开启 Secret Scanning 与 Push Protection
+
+### 步骤
 
 1. 在 `main` 上确认 CI 绿
 2. 同步版本号：`adapters/trae/plugin/parallelagent-orchestrator/package.json` 与 `packages/cli/package.json` 保持一致

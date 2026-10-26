@@ -10,6 +10,18 @@ Thumbs.db
 # 私人文件
 ._private/
 
+# 密钥与环境
+.env
+.env.*
+!.env.example
+.npmrc
+*.pem
+*.key
+
+# ParallelAgent 运行数据
+.parallel-agent/
+.pa-test/
+
 # 依赖与构建产物
 node_modules/
 dist/
