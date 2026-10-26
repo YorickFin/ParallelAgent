@@ -54,10 +54,19 @@ export class OrbitTable {
     fs.renameSync(tmp, this.storePath);
   }
 
-  /** 新建或更新轨道记录 */
+  /** 新建或更新轨道记录：同一轨只保留一个 active 记录 */
   upsert(sid: string, 轨: string): void {
     const now = new Date().toISOString();
     const existing = this.map.get(sid);
+
+    // 新会话接管同名轨时，旧 active 记录立即失效，避免 /dispatch 命中旧 sid
+    for (const r of this.map.values()) {
+      if (r.sid !== sid && r.轨 === 轨 && r.角色 === 'orbit' && r.状态 === 'active') {
+        r.状态 = 'deleted';
+        logger.audit('orbit_supersede', { old_sid: r.sid, new_sid: sid, 轨 });
+      }
+    }
+
     this.map.set(sid, {
       sid,
       轨,
@@ -102,12 +111,16 @@ export class OrbitTable {
     return this.map.get(sid);
   }
 
-  /** 按轨号查记录 */
+  /** 按轨号查记录（返回最新的 active 记录） */
   getBy轨(轨: string): OrbitRecord | undefined {
-    for (const r of this.map.values()) {
-      if (r.轨 === 轨 && r.状态 === 'active' && r.角色 === 'orbit') return r;
-    }
-    return undefined;
+    return this.getActiveBy轨(轨)[0];
+  }
+
+  /** 按轨号列出 active 记录，创建时点新的在前 */
+  getActiveBy轨(轨: string): OrbitRecord[] {
+    return Array.from(this.map.values())
+      .filter((r) => r.轨 === 轨 && r.状态 === 'active' && r.角色 === 'orbit')
+      .sort((a, b) => b.创建时点.localeCompare(a.创建时点));
   }
 
   /** 标记删除 */

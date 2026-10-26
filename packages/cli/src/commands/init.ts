@@ -20,8 +20,8 @@ import {
   EXPECTED_EXTENSION_VERSION,
   type TraeTarget,
 } from '../lib/installExtension.js';
-import { installSkills } from '../lib/installSkills.js';
-import { pingCdp, missingSkills } from '../lib/verify.js';
+import { installSkills, installReferences } from '../lib/installSkills.js';
+import { pingCdp, missingSkills, missingReferences } from '../lib/verify.js';
 
 const CDP_PORT = 9317;
 
@@ -173,13 +173,16 @@ export async function runInit(options: InitOptions): Promise<void> {
 
   // ── 3. 铺 skills ──
   console.log('');
-  console.log('步骤 3/5: 铺 Skills');
+  console.log('步骤 3/5: 铺 Skills 与共享 reference');
 
   if (dryRun) {
     dry(`拷 skills → ${trae.dataDir}/skills/`);
+    dry(`拷共享 reference → ${trae.dataDir}/shared/references/`);
   } else {
     const installed = installSkills(trae.dataDir);
     for (const p of installed) console.log(`  ✓ ${p}`);
+    const refs = installReferences(trae.dataDir);
+    for (const p of refs) console.log(`  ✓ ${p}`);
   }
 
   // ── 4. 写 argv.json ──
@@ -204,14 +207,14 @@ export async function runInit(options: InitOptions): Promise<void> {
   console.log('步骤 5/5: 验证');
 
   if (dryRun) {
-    dry('检查 skills 文件存在');
+    dry('检查 skills 与共享 reference 存在');
     dry('ping CDP（如 Trae 运行中）');
   } else {
-    const missing = missingSkills(trae.dataDir);
+    const missing = [...missingSkills(trae.dataDir), ...missingReferences(trae.dataDir)];
     if (missing.length) {
-      fail(`Skills 缺失:\n${missing.join('\n')}`);
+      fail(`Skills / reference 缺失:\n${missing.join('\n')}`);
     }
-    console.log('  ✓ Skills 文件就位');
+    console.log('  ✓ Skills 与共享 reference 就位');
 
     const cdpOk = await pingCdp(CDP_PORT);
     if (cdpOk) {

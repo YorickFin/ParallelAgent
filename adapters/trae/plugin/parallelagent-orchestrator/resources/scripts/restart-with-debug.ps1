@@ -20,9 +20,8 @@ if ($logDir -and -not (Test-Path $logDir)) {
     New-Item -ItemType Directory -Force -Path $logDir | Out-Null
 }
 
-"$(Get-Date -Format o) launch, exe=$ExePath port=$Port, wait 8s" | Out-File -FilePath $log -Encoding utf8
+"$(Get-Date -Format o) launch, exe=$ExePath port=$Port, restart immediately" | Out-File -FilePath $log -Encoding utf8
 if (-not (Test-Path $ExePath)) { "$(Get-Date -Format o) FATAL: exe not found: $ExePath" | Out-File -FilePath $log -Append -Encoding utf8; exit 1 }
-Start-Sleep -Seconds 8
 
 # 进程名取 exe 文件名去后缀（如 "Trae CN"）
 $procName = [System.IO.Path]::GetFileNameWithoutExtension($ExePath)

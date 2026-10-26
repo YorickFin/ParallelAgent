@@ -3,7 +3,7 @@
   "packageManager": "pnpm@10.33.2",
   "displayName": "ParallelAgent Orchestrator",
   "description": "CDP 执行器 + HTTP 网关 + 文件信箱 watch —— 仲裁者的自动化之手",
-  "version": "1.2.6",
+  "version": "2.0.0",
   "publisher": "yorickfin",
   "repository": "https://github.com/YorickFin/ParallelAgent",
   "homepage": "https://github.com/YorickFin/ParallelAgent",
@@ -14,6 +14,7 @@
   },
   "main": "./dist/extension.js",
   "activationEvents": [
+    "onStartupFinished",
     "onCommand:parallelagent.start",
     "onCommand:parallelagent.stop"
   ],
@@ -43,6 +44,21 @@
           "type": "number",
           "default": 9317,
           "description": "CDP 调试端口（Trae 启动时 --remote-debugging-port 指定）"
+        },
+        "parallelagent.autoStart": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "on",
+            "off"
+          ],
+          "enumDescriptions": [
+            "仅当项目存在 .parallel-agent/ 目录时自动启动（默认）",
+            "打开该工作区时总是自动启动",
+            "仅手动执行“ParallelAgent: 启动编排器”"
+          ],
+          "default": "auto",
+          "description": "编排器自动启动策略"
         },
         "parallelagent.httpPort": {
           "type": "number",

@@ -10,7 +10,7 @@
 一期交付的 ParallelAgent 在功能上已闭环，但分发形态是源码：
 
 - 用户要克隆仓库 → `pnpm install` → `pnpm build` → 手动把扩展装进 Trae → 手动复制 SKILL.md 到全局 skills → 手动搞清楚怎么带调试端口启动 Trae
-- `restartWithDebug` 命令硬编码了 `D:\Programs\Trae\Trae CN.exe` 和工作区探针脚本路径，换台机器即废
+- `restartWithDebug` 命令硬编码了 `<Trae安装目录>\Trae CN.exe` 和工作区探针脚本路径，换台机器即废
 
 v1.1.0 只解决"安装/启动"这一件事，不动一期的运行时逻辑。
 
@@ -40,7 +40,7 @@ v1.1.0 只解决"安装/启动"这一件事，不动一期的运行时逻辑。
 
 ### argv.json 实测验证记录（2026-10-20）
 
-- 路径：`C:\Users\Anni\.trae-cn\argv.json`（**不是** `%APPDATA%\Trae CN\`）
+- 路径：`%USERPROFILE%\.trae-cn\argv.json`（**不是** `%APPDATA%\Trae CN\`）
 - 写入 `"remote-debugging-port": "9317"` 后正常重启 Trae
 - `http://127.0.0.1:9317/json/version` 返回：
   - Browser: `Chrome/142.0.7444.235`
@@ -138,7 +138,7 @@ packages/
 
 #### 步骤 A1：迁移 restart 脚本，改用 `process.execPath`
 - 把 `adapters/trae/probes/restart-with-debug.ps1` 移到 `plugin/parallelagent-orchestrator/resources/scripts/restart-with-debug.ps1`
-- 移除硬编码 `D:\Programs\Trae\Trae CN.exe`：扩展侧通过 `process.execPath` 拿到 Trae exe 绝对路径，作为参数传给脚本
+- 移除硬编码 `<Trae安装目录>\Trae CN.exe`：扩展侧通过 `process.execPath` 拿到 Trae exe 绝对路径，作为参数传给脚本
 - 移除硬编码 `$port = 9317`：作为参数传入
 - `esbuild.build.js` 加 `copyPlugin` 把 `resources/` 拷进 `dist/`（或改 `package.json` 的 `files` 字段，vsce 打包时包含）
 - [extension.ts:178-200](../../plugin/parallelagent-orchestrator/src/extension.ts) `findRestartScript` 改为从 `context.extensionPath` 定位

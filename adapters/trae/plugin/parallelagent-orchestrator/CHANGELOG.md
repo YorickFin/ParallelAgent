@@ -1,5 +1,42 @@
 # Changelog
 
+## 2.0.0
+
+> 设计见 `adapters/trae/docs/实施/v2.0.0+/ParallelAgent第二期实现规划.md`
+> 说明：早期本地迭代标识未单独发布，相关变更统一归入 2.0.0。
+
+### 入口分流与单轨
+
+- 新增入口分流（L0-L4）：单轨与多轨共用同一份判据，用户不必先说“拆开跑”
+- 新增 `parallelagent-solo` Skill：L0 直做、L1 问清、L2 探路、L3 立规；L4 只写任务卡并移交仲裁者
+- 新增单轨台账 `.parallel-agent/单轨/台账/YYYY-MM.md`：小改动不写 PRD，但每次改动必须留痕（需求/改动/证据/结论）
+- 新增共享 reference `分流.md`、`台账.md`；仲裁者 §0 先分流，§4 强拆判据改为引用同一份文件
+- 协议目录新增 `单轨/`，明确单轨只写单轨目录、多轨只写转达/回执/快照
+- CLI：安装 3 个 Skill 与共享 reference；`doctor` 增加单轨台账校验（只告警，不改变退出码）；`uninit` 同步清理
+
+### 多轨缺陷修复
+
+- 修复 D-01：历史 active 轨记录导致 `/dispatch` 命中旧 sid；新建同名轨时旧记录置 `deleted`，`/dispatch` 按创建时点倒序尝试候选 sid
+- 修复 D-03：`doctor` 台账检查改为按条目判断真实未回填
+- 修复 D-04：回执新增「命令与计数」必填项，测试数/通过数/文件数/行数必须引自实际命令输出，禁止估算或沿用旧结果
+
+### 编排器项目级自动启动
+
+- 项目根存在 `.parallel-agent/` 时自动启动；`parallelagent.autoStart` 可选 `auto`（默认）/ `on` / `off`
+- 项目级单实例锁 `.parallel-agent/信号/orchestrator.lock`：同一项目多窗口只启动一个实例，PID 失效自动清理
+- 自动启动失败静默：状态栏显示运行中 / CDP 未连接 / 已在其他窗口运行 / 端口冲突 / 已停止
+- 用户主动停止后本窗口不再自动启动；手动执行启动命令清除该标记
+- `/health` 增加 `workspace` 与 `pid` 字段
+- Agent 页 target 识别：`url` 含 `solo-lite`，或 title 以 `Agent` 开头且不含 `TRAE CN`；自动启动等待约 30 秒，手动重连约 20 秒
+- CDP 连接失败写入 `cdp_connect_fail` 审计（含 `url`），便于区分端口不通、target 未就绪与连接失败
+- `ECONNREFUSED` 时提示「频繁重启导致 CDP 端口绑定失败，下次重启后恢复」，提供「立即重启 / 忽略」；所有重启入口统一立即执行，无 8 秒等待
+
+### 仓库与发布流程
+
+- 新增敏感信息自查清单与发布前复核（`CONTRIBUTING.md`）
+- `.gitignore` 补齐 `.env*`、`.npmrc`、`*.pem`、`*.key`、`.parallel-agent/`、`.pa-test/`
+- 测试报告与设计文档中的本机绝对路径、系统用户名改为占位符
+
 ## 1.2.6
 
 - `uninit` 现在会真正卸载扩展：先试 `trae --uninstall-extension`；该命令在部分 Trae 版本上会报 `Cannot read properties of undefined (reading 'isProtectedExtension')`，此时自动退回文件级卸载（删 `extensions.json` 条目、扩展目录、`.obsolete` 中的旧登记）
@@ -45,7 +82,7 @@
 
 ## 1.2.0（已实现，待真机实测与发布）
 
-> 设计见 `adapters/trae/docs/ParallelAgent-v1.2.0设计文档.md`
+> 设计见 `adapters/trae/docs/实施/v1.0.0+/ParallelAgent-v1.2.0设计文档.md`
 
 - **破坏性变更**：`POST /watch` 由「阻塞等待回执」改为「提交后台 job 并立即返回 `job_id`」，响应不再包含 `{完成, 未完成}`
 - 新增待处理队列：每轨完成/超时写入 `信号/轮次状态/第N轮-v{M}.json`，字段分 `状态`（pending/done/timeout/failed）与 `处理`（null/pending/notified/done）

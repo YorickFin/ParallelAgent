@@ -5,7 +5,7 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { SKILL_NAMES } from './installSkills.js';
+import { SKILL_NAMES, REFERENCE_FILES } from './installSkills.js';
 
 /** ping CDP 端口（Trae 未运行时返回 false，调用方自行决定是否视为失败） */
 export async function pingCdp(port: number, timeoutMs = 2000): Promise<boolean> {
@@ -25,11 +25,21 @@ export async function pingCdp(port: number, timeoutMs = 2000): Promise<boolean> 
   }
 }
 
-/** 检查两个 SKILL.md 是否在位，返回缺失项（空数组 = 全在位） */
+/** 检查三个 SKILL.md 是否在位，返回缺失项（空数组 = 全在位） */
 export function missingSkills(dataDir: string): string[] {
   const missing: string[] = [];
   for (const name of SKILL_NAMES) {
     const p = path.join(dataDir, 'skills', name, 'SKILL.md');
+    if (!fs.existsSync(p)) missing.push(p);
+  }
+  return missing;
+}
+
+/** 检查三个共享 reference 是否在位，返回缺失项（空数组 = 全在位） */
+export function missingReferences(dataDir: string): string[] {
+  const missing: string[] = [];
+  for (const name of REFERENCE_FILES) {
+    const p = path.join(dataDir, 'shared', 'references', name);
     if (!fs.existsSync(p)) missing.push(p);
   }
   return missing;

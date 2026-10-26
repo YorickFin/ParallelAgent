@@ -6,7 +6,7 @@
 import * as path from 'node:path';
 import { detectTrae, detectDataDir } from '../lib/detectTrae.js';
 import { removeRemoteDebuggingPort } from '../lib/argvJson.js';
-import { removeSkills } from '../lib/installSkills.js';
+import { removeSkills, removeReferences } from '../lib/installSkills.js';
 import { uninstallExtension, type TraeTarget } from '../lib/installExtension.js';
 
 export function runUninit(): void {
@@ -42,7 +42,15 @@ export function runUninit(): void {
     console.log('  （Skills 目录不存在，跳过）');
   }
 
-  // 3. argv.json 移除 remote-debugging-port
+  // 3. 移除共享 reference
+  const removedRefs = removeReferences(dataDir);
+  if (removedRefs.length) {
+    for (const p of removedRefs) console.log(`  ✓ 已删除 ${p}`);
+  } else {
+    console.log('  （共享 reference 不存在，跳过）');
+  }
+
+  // 4. argv.json 移除 remote-debugging-port
   const argvPath = path.join(dataDir, 'argv.json');
   const changed = removeRemoteDebuggingPort(argvPath);
   console.log(

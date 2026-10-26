@@ -40,7 +40,7 @@
 
 | 项 | 事实 | 证据 |
 |---|---|---|
-| 安装形态 | 机器上只有一个 Trae：`D:\Programs\Trae\Trae CN.exe`，**Work 与 IDE 是同一二进制的两个"场景"**，不是独立程序 | 进程枚举、安装目录扫描 |
+| 安装形态 | 机器上只有一个 Trae：`<Trae安装目录>\Trae CN.exe`，**Work 与 IDE 是同一二进制的两个"场景"**，不是独立程序 | 进程枚举、安装目录扫描 |
 | 版本 | Trae CN 1.107.1（stable），Electron 内核 Chromium 142 | `resources/app/product.json`；CDP 探测返回 `Chrome/142.0.7444.235` |
 | Work 界面技术栈 | 本地 workbench 的 solo-lite 裁剪变体（**本地 renderer，非远程网页、非独立 webview**） | `out/vs/code/electron-browser/scenes/desktop.config.js`、`workbench.desktop.main.solo-lite*.js` |
 | CDP 调试端口 | 启动加 `--remote-debugging-port=<port>` 后端口开放，`/json/version`、`/json` 目标枚举均正常（用临时 user-data-dir 实测，未动主实例） | 当日 CDP 探针 |
@@ -216,7 +216,7 @@
 
 若 CDP 被未来版本封掉、且插件路线不成立：
 
-- 用 `E:\备份\project\Python\autoxkit`（已有：窗口绑定、mss 截图、模板/颜色匹配、驱动级键鼠注入、全局 hook）+ onnxocr（拟新增）；
+- 用 `<本机项目>\autoxkit`（已有：窗口绑定、mss 截图、模板/颜色匹配、驱动级键鼠注入、全局 hook）+ onnxocr（拟新增）；
 - **OCR 只进控制面**：会话名核对、弹窗识别、超时截图诊断；完成信号仍走回执文件；
 - 已知代价：坐标/模板脆弱、Electron 窗口后台发字可能失效（文本走剪贴板粘贴）、锁屏/RDP 断开失效、需防自指焦点错乱；
 - 仅作为兜底通道保留，不作为一期主方案。

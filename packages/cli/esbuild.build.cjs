@@ -26,9 +26,19 @@ function copySkillAssets() {
   console.log('[assets] skills copied → assets/skills/');
 }
 
+/** 构建时把 adapters/trae/shared/references/ 拷到 assets/shared/references/ */
+function copyReferenceAssets() {
+  const srcRoot = path.join(__dirname, '..', '..', 'adapters', 'trae', 'shared', 'references');
+  const destRoot = path.join(__dirname, 'assets', 'shared', 'references');
+  fs.rmSync(destRoot, { recursive: true, force: true });
+  fs.cpSync(srcRoot, destRoot, { recursive: true });
+  console.log('[assets] references copied → assets/shared/references/');
+}
+
 async function main() {
   await esbuild.build(options);
   copySkillAssets();
+  copyReferenceAssets();
   console.log('[esbuild] build complete');
 }
 

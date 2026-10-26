@@ -17,12 +17,18 @@ import { MailboxPaths } from './mailbox/paths';
 import { ReceiptWatcher } from './mailbox/watcher';
 import { WatchJobManager } from './mailbox/watchJob';
 import { Notifier } from './cdp/notifier';
-import { pingCdp } from './cdp/precheck';
+import {
+  clearLock,
+  isProcessAlive,
+  readLock,
+  sameWorkspace,
+  writeLock,
+} from './state/projectLock';
 import { detectArgvJsonPath } from './state/traePaths';
 import { ensureRemoteDebuggingPort } from './state/argvJson';
 
 // ── 模块实例（后续步骤填充） ──────────────────────────
-let httpServer: { close(): void } | null = null;
+let httpServer: { close(): void; ready: Promise<void> } | null = null;
 let cdpClient: CdpClient | null = null;
 let cdpTarget: CdpTarget | null = null;
 let fileWatcher: { dispose(): void } | null = null;
@@ -30,19 +36,102 @@ let watchJobs: WatchJobManager | null = null;
 let orbitTable: OrbitTable | null = null;
 let routeDeps: RouteDeps | null = null;
 let currentConfig: ParallelAgentConfig | null = null;
+let statusBar: vscode.StatusBarItem | null = null;
+let autoStartTimer: ReturnType<typeof setTimeout> | null = null;
+/** 最近一次 CDP 连接错误（用于识别 ECONNREFUSED） */
+let lastCdpError: string | null = null;
+/** 「立即重启」提示冷却，避免自动启动与手动重连连续弹窗 */
+let lastRefusedPromptAt = 0;
+
+/** 自动启动延迟：等 Work 页面与工作区就绪 */
+const AUTO_START_DELAY_MS = 2500;
+/** CDP 连接重试间隔 */
+const CDP_RETRY_INTERVAL_MS = 2000;
+/** 自动启动时等待 Agent 页出现的重试次数（15 次 × 2s ≈ 30s） */
+const AUTO_START_CDP_RETRIES = 15;
+/** 用户主动停止后不再自动启动（workspaceState） */
+const AUTO_START_DISABLED_KEY = 'parallelagent.autoStartDisabled';
+
+type StatusState =
+  | 'hidden'
+  | 'starting'
+  | 'running'
+  | 'cdp_down'
+  | 'other_window'
+  | 'port_conflict'
+  | 'stopped';
+
+/** 状态栏：自动启动路径的唯一可见反馈 */
+function setStatus(state: StatusState, detail?: string): void {
+  if (!statusBar) return;
+  if (state === 'hidden') {
+    statusBar.hide();
+    return;
+  }
+
+  const presets: Record<
+    Exclude<StatusState, 'hidden'>,
+    { icon: string; text: string; tip: string }
+  > = {
+    starting: {
+      icon: '$(sync~spin)',
+      text: 'PA · 启动中',
+      tip: 'ParallelAgent 编排器正在启动',
+    },
+    running: {
+      icon: '$(check)',
+      text: 'PA · 127.0.0.1:9318',
+      tip: '编排器运行中；点击可重试 CDP 连接',
+    },
+    cdp_down: {
+      icon: '$(warning)',
+      text: 'PA · CDP 未连接',
+      tip: 'HTTP 网关已启动但 CDP 不可用；请先打开 Agent 页，再点击重试；或运行「ParallelAgent: 带调试端口重启 Trae」',
+    },
+    other_window: {
+      icon: '$(circle-slash)',
+      text: 'PA · 已在其他窗口运行',
+      tip: '同一项目已有编排器实例',
+    },
+    port_conflict: {
+      icon: '$(error)',
+      text: 'PA · 端口 9318 被占用',
+      tip: '端口被其他项目实例或其他程序占用',
+    },
+    stopped: {
+      icon: '$(circle-slash)',
+      text: 'PA · 已停止',
+      tip: '本窗口已停止自动启动；点击可手动启动',
+    },
+  };
+
+  const preset = presets[state];
+  statusBar.text = `${preset.icon} ${preset.text}`;
+  statusBar.tooltip = detail ? `${preset.tip}\n${detail}` : preset.tip;
+  statusBar.show();
+}
 
 // ── 激活入口 ──────────────────────────────────────────
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
   logger.initLogger(context);
 
+  statusBar = vscode.window.createStatusBarItem(
+    vscode.StatusBarAlignment.Left,
+    100,
+  );
+  statusBar.command = 'parallelagent.start';
+  context.subscriptions.push(statusBar);
+
   context.subscriptions.push(
-    vscode.commands.registerCommand('parallelagent.start', () =>
-      startOrchestrator(context),
-    ),
-    vscode.commands.registerCommand('parallelagent.stop', () =>
-      stopOrchestrator(),
-    ),
+    vscode.commands.registerCommand('parallelagent.start', async () => {
+      await context.workspaceState.update(AUTO_START_DISABLED_KEY, false);
+      await startOrchestrator(context, { silent: false, cdpRetries: 10 });
+    }),
+    vscode.commands.registerCommand('parallelagent.stop', async () => {
+      await context.workspaceState.update(AUTO_START_DISABLED_KEY, true);
+      await stopOrchestrator({ userInitiated: true });
+    }),
     vscode.commands.registerCommand('parallelagent.health', () =>
       healthCheck(),
     ),
@@ -51,48 +140,159 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     ),
   );
 
-  logger.info('扩展已激活，等待启动命令');
-
-  // A3：激活后 CDP 预检（不阻塞 activate 返回）
-  void precheckCdp(context);
+  logger.info('扩展已激活');
+  scheduleAutoStart(context);
 }
 
-/** A3：CDP 预检；不通则引导一键修复 */
-async function precheckCdp(context: vscode.ExtensionContext): Promise<void> {
-  const port = readConfig().cdpPort;
-  const ok = await pingCdp(port);
-  if (ok) {
-    logger.info(`CDP 预检通过（端口 ${port}）`);
+/** 自动启动判定 + 延迟启动（失败静默，状态栏承载） */
+function scheduleAutoStart(context: vscode.ExtensionContext): void {
+  const config = readConfig();
+  const decision = shouldAutoStart(context, config);
+  if (!decision.ok) {
+    logger.audit('auto_start_skip', {
+      reason: decision.reason,
+      workspace: config.workspaceRoot,
+    });
+    setStatus('hidden');
     return;
   }
-  logger.warn(`CDP 预检未通过（端口 ${port}）`);
-  const choice = await vscode.window.showErrorMessage(
-    `ParallelAgent：CDP 端口 ${port} 不通。可一键写入 argv.json 并重启 Trae 修复。`,
-    '立即修复',
-    '仅本次忽略',
-  );
-  if (choice === '立即修复') {
-    await restartWithDebug(context);
+
+  setStatus('starting');
+  autoStartTimer = setTimeout(() => {
+    autoStartTimer = null;
+    void startOrchestrator(context, {
+      silent: true,
+      cdpRetries: AUTO_START_CDP_RETRIES,
+      requireWorkPage: true,
+    });
+  }, AUTO_START_DELAY_MS);
+
+  context.subscriptions.push({
+    dispose: () => {
+      if (autoStartTimer) {
+        clearTimeout(autoStartTimer);
+        autoStartTimer = null;
+      }
+    },
+  });
+}
+
+function shouldAutoStart(
+  context: vscode.ExtensionContext,
+  config: ParallelAgentConfig,
+): { ok: boolean; reason: string } {
+  if (!config.workspaceRoot) return { ok: false, reason: 'no-workspace' };
+  if (config.autoStart === 'off') return { ok: false, reason: 'config-off' };
+  if (context.workspaceState.get<boolean>(AUTO_START_DISABLED_KEY, false)) {
+    return { ok: false, reason: 'user-stopped' };
   }
+  if (config.autoStart === 'auto' && !fs.existsSync(config.mailboxRoot)) {
+    return { ok: false, reason: 'no-mailbox' };
+  }
+  return { ok: true, reason: 'auto' };
 }
 
 // ── 命令实现 ───────────────────────────────────────────
 
+interface StartOptions {
+  /** 自动启动路径为 true：不弹任何提示框，状态栏承载结果 */
+  silent?: boolean;
+  /** CDP 连接尝试次数 */
+  cdpRetries?: number;
+  /** 只接受 solo-lite 的 Agent 页；默认保留「管理员」兜底 */
+  requireWorkPage?: boolean;
+}
+
 async function startOrchestrator(
   context: vscode.ExtensionContext,
+  opts: StartOptions = {},
 ): Promise<void> {
+  const silent = opts.silent ?? false;
+  const cdpRetries = opts.cdpRetries ?? 1;
+  const requireWorkPage = opts.requireWorkPage ?? false;
   const config = readConfig();
   currentConfig = config;
+  setStatus('starting');
 
   // 已在运行：只重试 CDP（修好端口后无需先停再启）
   if (httpServer && routeDeps) {
     logger.info('编排器已在运行，重试 CDP 连接...');
-    const connected = await connectCdp(config, routeDeps);
-    vscode.window.showInformationMessage(
-      connected
-        ? 'ParallelAgent 编排器已在运行，CDP 已连接'
-        : `ParallelAgent 编排器已在运行（HTTP 127.0.0.1:${config.httpPort}），CDP 仍不可达`,
+    const connected = await connectCdpWithRetry(
+      config,
+      routeDeps,
+      cdpRetries,
+      requireWorkPage,
     );
+    setStatus(connected ? 'running' : 'cdp_down');
+    if (!connected) {
+      const prompted = await promptRestartIfPortRefused(context);
+      if (!prompted && !silent) {
+        vscode.window.showInformationMessage(
+          `ParallelAgent 编排器已在运行（HTTP 127.0.0.1:${config.httpPort}），CDP 仍不可达`,
+        );
+      }
+    } else if (!silent) {
+      vscode.window.showInformationMessage(
+        'ParallelAgent 编排器已在运行，CDP 已连接',
+      );
+    }
+    return;
+  }
+
+  // 项目锁：同一项目只允许一个编排器实例
+  const lock = readLock(config.mailboxRoot);
+  if (
+    lock &&
+    lock.pid !== process.pid &&
+    isProcessAlive(lock.pid) &&
+    sameWorkspace(lock.workspace, config.workspaceRoot)
+  ) {
+    logger.audit('lock_conflict', lock);
+    setStatus('other_window', `PID ${lock.pid} · ${lock.workspace}`);
+    if (!silent) {
+      vscode.window.showWarningMessage(
+        `ParallelAgent 编排器已在另一窗口运行（PID ${lock.pid}）`,
+      );
+    }
+    return;
+  }
+
+  // 端口探测：区分本项目实例、其他项目实例与其他程序
+  const health = await probeHealth(config.httpPort);
+  if (health?.ok) {
+    const healthWorkspace =
+      typeof health.workspace === 'string' ? health.workspace : '';
+    if (sameWorkspace(healthWorkspace, config.workspaceRoot)) {
+      // 锁丢失但实例仍在：补写锁并复用
+      if (typeof health.pid === 'number' && health.pid > 0) {
+        writeLock(config.mailboxRoot, {
+          pid: health.pid,
+          port: config.httpPort,
+          workspace: config.workspaceRoot,
+          startedAt: new Date().toISOString(),
+          version: context.extension.packageJSON.version as string,
+        });
+      }
+      logger.audit('adopt_existing_instance', { port: config.httpPort });
+      setStatus('running');
+      if (!silent) {
+        vscode.window.showInformationMessage(
+          `ParallelAgent 编排器已在本项目的另一窗口运行（127.0.0.1:${config.httpPort}）`,
+        );
+      }
+      return;
+    }
+
+    logger.audit('port_conflict', {
+      port: config.httpPort,
+      otherWorkspace: healthWorkspace,
+    });
+    setStatus('port_conflict', `被 ${healthWorkspace || '其他项目'} 占用`);
+    if (!silent) {
+      vscode.window.showErrorMessage(
+        `ParallelAgent 端口 ${config.httpPort} 已被其他项目占用（${healthWorkspace || '未知项目'}）`,
+      );
+    }
     return;
   }
 
@@ -134,21 +334,119 @@ async function startOrchestrator(
   });
   watchJobs = jobs;
 
-  routeDeps = { cdp: null, orbit: orbitTable, watcher, jobs, projectName };
-  httpServer = createHttpServer(config.httpPort, routeDeps);
+  routeDeps = {
+    cdp: null,
+    orbit: orbitTable,
+    watcher,
+    jobs,
+    projectName,
+    workspace: config.workspaceRoot,
+  };
+  const server = createHttpServer(config.httpPort, routeDeps);
+  httpServer = server;
+
+  try {
+    await server.ready;
+  } catch (e) {
+    const msg = (e as Error).message;
+    logger.audit('port_conflict', { port: config.httpPort, err: msg });
+    setStatus('port_conflict', msg);
+    httpServer = null;
+    fileWatcher?.dispose();
+    fileWatcher = null;
+    watchJobs = null;
+    orbitTable = null;
+    routeDeps = null;
+    if (!silent) {
+      vscode.window.showErrorMessage(
+        `ParallelAgent 端口 ${config.httpPort} 启动失败：${msg}`,
+      );
+    }
+    return;
+  }
+
+  writeLock(config.mailboxRoot, {
+    pid: process.pid,
+    port: config.httpPort,
+    workspace: config.workspaceRoot,
+    startedAt: new Date().toISOString(),
+    version: context.extension.packageJSON.version as string,
+  });
+
   jobs.start();
 
   // 步骤 2: 再连 CDP；失败只告警，HTTP 网关保持可用
-  const connected = await connectCdp(config, routeDeps);
+  const connected = await connectCdpWithRetry(
+    config,
+    routeDeps,
+    cdpRetries,
+    requireWorkPage,
+  );
+  setStatus(connected ? 'running' : 'cdp_down');
 
-  if (connected) {
+  if (!connected) {
+    // ECONNREFUSED 说明 Trae 本次启动没绑定端口，提示重启（下次启动可恢复）
+    const prompted = await promptRestartIfPortRefused(context);
+    if (!prompted && !silent) {
+      vscode.window.showWarningMessage(
+        `ParallelAgent HTTP 网关已启动（127.0.0.1:${config.httpPort}），但 CDP ${config.cdpPort} 连接失败。` +
+          '运行"带调试端口重启 Trae"后，再次执行启动命令即可重试连接。',
+      );
+    }
+  } else if (!silent) {
     logger.info('编排器已启动');
     vscode.window.showInformationMessage('ParallelAgent 编排器已启动');
-  } else {
-    vscode.window.showWarningMessage(
-      `ParallelAgent HTTP 网关已启动（127.0.0.1:${config.httpPort}），但 CDP ${config.cdpPort} 连接失败。` +
-        '运行"带调试端口重启 Trae"后，再次执行启动命令即可重试连接。',
-    );
+  }
+
+  if (silent) {
+    logger.audit('auto_start', { port: config.httpPort, cdp: connected });
+  }
+}
+
+/** 判断最近一次 CDP 失败是否为端口未监听 */
+function isPortRefused(err: string | null): boolean {
+  return !!err && err.includes('ECONNREFUSED');
+}
+
+/**
+ * ECONNREFUSED：Trae 本次启动未绑定调试端口，下次完整重启可恢复。
+ * 返回是否已弹出提示（用于避免同时再弹普通失败提示）。
+ */
+async function promptRestartIfPortRefused(
+  context: vscode.ExtensionContext,
+): Promise<boolean> {
+  if (!isPortRefused(lastCdpError)) return false;
+  const now = Date.now();
+  if (now - lastRefusedPromptAt < 30_000) return false;
+  lastRefusedPromptAt = now;
+
+  const choice = await vscode.window.showWarningMessage(
+    'ParallelAgent：频繁重启导致 CDP 端口绑定失败，下次重启后恢复。',
+    '立即重启',
+    '忽略',
+  );
+  if (choice === '立即重启') {
+    await restartWithDebug(context);
+  }
+  return true;
+}
+
+/** 探测 9318 上的实例；不可达返回 null */
+async function probeHealth(
+  port: number,
+): Promise<{ ok?: boolean; workspace?: string; pid?: number } | null> {
+  try {
+    const resp = await fetch(`http://127.0.0.1:${port}/health`, {
+      signal: AbortSignal.timeout(1500),
+    });
+    if (!resp.ok) return null;
+    return (await resp.json()) as {
+      ok?: boolean;
+      workspace?: string;
+      pid?: number;
+    };
+  } catch {
+    return null;
   }
 }
 
@@ -156,21 +454,57 @@ async function startOrchestrator(
 async function connectCdp(
   config: ParallelAgentConfig,
   deps: RouteDeps,
+  requireWorkPage = false,
 ): Promise<boolean> {
   try {
-    const { client, target } = await discoverAndConnect(config.cdpPort);
+    const { client, target } = await discoverAndConnect(config.cdpPort, {
+      requireWorkPage,
+    });
     cdpClient = client;
     cdpTarget = target;
     deps.cdp = client;
-    logger.audit('cdp_connect', { targetId: target.id, title: target.title });
+    lastCdpError = null;
+    logger.audit('cdp_connect', {
+      targetId: target.id,
+      title: target.title,
+      url: target.url,
+    });
     return true;
   } catch (e) {
-    logger.error(`CDP 连接失败: ${(e as Error).message}`);
+    const msg = (e as Error).message;
+    lastCdpError = msg;
+    logger.error(`CDP 连接失败: ${msg}`);
+    logger.audit('cdp_connect_fail', { err: msg, requireWorkPage });
     return false;
   }
 }
 
-async function stopOrchestrator(): Promise<void> {
+/** 等待固定毫秒 */
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** 带重试的 CDP 连接：启动期 Work 页面可能尚未就绪 */
+async function connectCdpWithRetry(
+  config: ParallelAgentConfig,
+  deps: RouteDeps,
+  attempts: number,
+  requireWorkPage = false,
+): Promise<boolean> {
+  const total = Math.max(1, attempts);
+  for (let i = 0; i < total; i++) {
+    if (await connectCdp(config, deps, requireWorkPage)) return true;
+    if (i < total - 1) await sleep(CDP_RETRY_INTERVAL_MS);
+  }
+  return false;
+}
+
+interface StopOptions {
+  /** true = 用户主动停止：显示提示并更新状态栏 */
+  userInitiated?: boolean;
+}
+
+async function stopOrchestrator(opts: StopOptions = {}): Promise<void> {
   logger.info('编排器停止中...');
 
   httpServer?.close();
@@ -186,12 +520,24 @@ async function stopOrchestrator(): Promise<void> {
   watchJobs?.dispose();
   watchJobs = null;
 
+  // 释放项目锁，允许其他窗口接管
+  const mailboxRoot = currentConfig?.mailboxRoot ?? readConfig().mailboxRoot;
+  clearLock(mailboxRoot);
+
   orbitTable = null;
   routeDeps = null;
   currentConfig = null;
 
+  if (opts.userInitiated) {
+    setStatus('stopped');
+  }
+
   logger.info('编排器已停止');
-  vscode.window.showInformationMessage('ParallelAgent 编排器已停止');
+  if (opts.userInitiated) {
+    vscode.window.showInformationMessage(
+      'ParallelAgent 编排器已停止（本窗口不再自动启动）',
+    );
+  }
 }
 
 async function healthCheck(): Promise<void> {
@@ -223,7 +569,7 @@ async function healthCheck(): Promise<void> {
 }
 
 /**
- * A2：写 argv.json（持久化调试端口）+ 重启 Trae。
+ * A2：写 argv.json（持久化调试端口）+ 立即重启 Trae。
  * argv.json 一旦写入，之后任何入口启动 Trae 调试端口都自动就绪。
  */
 async function restartWithDebug(
@@ -325,7 +671,7 @@ async function restartWithDebug(
       }
       logger.info(`重启脚本已拉起: ${out}，日志 ${logPath}`);
       vscode.window.showInformationMessage(
-        'ParallelAgent 已写入调试端口配置，将在 8 秒后关闭并重启 Trae',
+        'ParallelAgent 已写入调试端口配置，正在重启 Trae',
       );
     },
   );

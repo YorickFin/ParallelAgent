@@ -6,6 +6,8 @@
 > - `ParallelAgent生命周期治理初稿.md`——生命周期层动态治理（拆分前/收回/收回后谁做/交接手册/状态自检），本文档引用其结论不重复细节
 > 冻结日期：2026-10-15
 
+> v2.0.0 起新增入口分流与单轨模式，见 `../实施/v2.0.0+/ParallelAgent第二期实现规划.md`；本文档的多轨部分仍然有效。
+
 ---
 
 ## 0. 文档定位
@@ -511,6 +513,7 @@ length [{"min": Number(1), "value": String("")}]
 - 裁决编号引用：[#A.001]
 - 完成时点：2026-10-15T10:41:00+08:00
 - 证据形式：[文件路径 + 行号 / 测试通过 / 截图]
+- 命令与计数：[本次实际执行的验收命令 → 输出摘要]
 - 实际改动：[文件列表]
 - 待仲裁者实检：[验证清单]
 
@@ -768,7 +771,7 @@ Trae 不暴露：token 用量、上下文压缩次数、上下文剩余容量。
 | 编排器插件 | `extensions/parallelagent-orchestrator/` | 待实现 |
 | CDP 工具（重写） | `scripts/cdp.ps1` | 已删，按 §8.3 重写 |
 | 重启脚本 | `scripts/restart-with-debug.ps1` | 已有 |
-| 探针扩展 | `C:\Users\Anni\.trae-cn\extensions\parallelagent.cmdprobe-0.0.2\` | 已改不自动 run；正式实现后删除 |
+| 探针扩展 | `%USERPROFILE%\.trae-cn\extensions\parallelagent.cmdprobe-0.0.2\` | 已改不自动 run；正式实现后删除 |
 
 ---
 
