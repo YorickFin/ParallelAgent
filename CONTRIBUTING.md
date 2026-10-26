@@ -78,9 +78,8 @@ git grep -n -I -E '(ghp_|github_pat_|npm_[A-Za-z0-9]{20,}|sk-[A-Za-z0-9]{20,}|BE
 # 私有文件与生成物是否被追踪
 git ls-files | Select-String -Pattern '(\.env|\.parallel-agent|\._private|\.log$|\.vsix$)'
 
-# 提交身份与 AI 署名（author/committer 应为本人，且无 AI 共同作者）
+# 提交身份（author/committer 应为本人）
 git log -1 --format='A: %an <%ae> | C: %cn <%ce>'
-git log --format='%B' | Select-String 'Co-Authored-By'
 ```
 
 命中项必须处理完再提交；无法确认的，在 PR 描述里说明。
@@ -143,7 +142,6 @@ docs(skill): 开轨前强制检查交接手册存在
 ### 身份与署名
 
 - author 与 committer 都必须是本人 GitHub 身份，推荐 `<id>+<username>@users.noreply.github.com`。
-- 禁止添加 `Co-Authored-By: Claude`、`Co-Authored-By: Copilot` 等 AI 共同作者署名。
 - Trae 终端会注入 `GIT_COMMITTER_NAME` / `GIT_COMMITTER_EMAIL`，优先级高于 `.git/config`。提交前先覆盖：
 
 ```powershell
