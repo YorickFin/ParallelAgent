@@ -81,6 +81,7 @@ test-docs/                   # 版本测试报告
 - v2.1.1：自动启动只连 Agent 页并等待其就绪，修复首次 `/new` 的 `anchor_not_found`
 - v2.1.2：修正 Agent 页识别（兼容 `Agent [管理员]` 形态），修复自动启动空等与手动重连不一致
 - v2.1.3：手动重连与自动启动同为 20 秒 CDP 重试窗口，失败原因写入审计
+- v2.1.4：CDP 端口绑定失败时提示「立即重启 / 忽略」，立即重启跳过等待
 
 真实多轨验证项目：[slate-desktop](https://github.com/YorickFin/slate-desktop)。
 

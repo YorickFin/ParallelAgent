@@ -38,6 +38,10 @@ let routeDeps: RouteDeps | null = null;
 let currentConfig: ParallelAgentConfig | null = null;
 let statusBar: vscode.StatusBarItem | null = null;
 let autoStartTimer: ReturnType<typeof setTimeout> | null = null;
+/** 最近一次 CDP 连接错误（用于识别 ECONNREFUSED） */
+let lastCdpError: string | null = null;
+/** 「立即重启」提示冷却，避免自动启动与手动重连连续弹窗 */
+let lastRefusedPromptAt = 0;
 
 /** 自动启动延迟：等 Work 页面与工作区就绪 */
 const AUTO_START_DELAY_MS = 2500;
@@ -220,11 +224,16 @@ async function startOrchestrator(
       requireWorkPage,
     );
     setStatus(connected ? 'running' : 'cdp_down');
-    if (!silent) {
+    if (!connected) {
+      const prompted = await promptRestartIfPortRefused(context);
+      if (!prompted && !silent) {
+        vscode.window.showInformationMessage(
+          `ParallelAgent 编排器已在运行（HTTP 127.0.0.1:${config.httpPort}），CDP 仍不可达`,
+        );
+      }
+    } else if (!silent) {
       vscode.window.showInformationMessage(
-        connected
-          ? 'ParallelAgent 编排器已在运行，CDP 已连接'
-          : `ParallelAgent 编排器已在运行（HTTP 127.0.0.1:${config.httpPort}），CDP 仍不可达`,
+        'ParallelAgent 编排器已在运行，CDP 已连接',
       );
     }
     return;
@@ -375,20 +384,51 @@ async function startOrchestrator(
   );
   setStatus(connected ? 'running' : 'cdp_down');
 
-  if (silent) {
-    logger.audit('auto_start', { port: config.httpPort, cdp: connected });
-    return;
-  }
-
-  if (connected) {
+  if (!connected) {
+    // ECONNREFUSED 说明 Trae 本次启动没绑定端口，提示重启（下次启动可恢复）
+    const prompted = await promptRestartIfPortRefused(context);
+    if (!prompted && !silent) {
+      vscode.window.showWarningMessage(
+        `ParallelAgent HTTP 网关已启动（127.0.0.1:${config.httpPort}），但 CDP ${config.cdpPort} 连接失败。` +
+          '运行"带调试端口重启 Trae"后，再次执行启动命令即可重试连接。',
+      );
+    }
+  } else if (!silent) {
     logger.info('编排器已启动');
     vscode.window.showInformationMessage('ParallelAgent 编排器已启动');
-  } else {
-    vscode.window.showWarningMessage(
-      `ParallelAgent HTTP 网关已启动（127.0.0.1:${config.httpPort}），但 CDP ${config.cdpPort} 连接失败。` +
-        '运行"带调试端口重启 Trae"后，再次执行启动命令即可重试连接。',
-    );
   }
+
+  if (silent) {
+    logger.audit('auto_start', { port: config.httpPort, cdp: connected });
+  }
+}
+
+/** 判断最近一次 CDP 失败是否为端口未监听 */
+function isPortRefused(err: string | null): boolean {
+  return !!err && err.includes('ECONNREFUSED');
+}
+
+/**
+ * ECONNREFUSED：Trae 本次启动未绑定调试端口，下次完整重启可恢复。
+ * 返回是否已弹出提示（用于避免同时再弹普通失败提示）。
+ */
+async function promptRestartIfPortRefused(
+  context: vscode.ExtensionContext,
+): Promise<boolean> {
+  if (!isPortRefused(lastCdpError)) return false;
+  const now = Date.now();
+  if (now - lastRefusedPromptAt < 30_000) return false;
+  lastRefusedPromptAt = now;
+
+  const choice = await vscode.window.showWarningMessage(
+    'ParallelAgent：频繁重启导致 CDP 端口绑定失败，下次重启后恢复。',
+    '立即重启',
+    '忽略',
+  );
+  if (choice === '立即重启') {
+    await restartWithDebug(context, { delaySeconds: 0 });
+  }
+  return true;
 }
 
 /** 探测 9318 上的实例；不可达返回 null */
@@ -423,6 +463,7 @@ async function connectCdp(
     cdpClient = client;
     cdpTarget = target;
     deps.cdp = client;
+    lastCdpError = null;
     logger.audit('cdp_connect', {
       targetId: target.id,
       title: target.title,
@@ -431,6 +472,7 @@ async function connectCdp(
     return true;
   } catch (e) {
     const msg = (e as Error).message;
+    lastCdpError = msg;
     logger.error(`CDP 连接失败: ${msg}`);
     logger.audit('cdp_connect_fail', { err: msg, requireWorkPage });
     return false;
@@ -530,9 +572,16 @@ async function healthCheck(): Promise<void> {
  * A2：写 argv.json（持久化调试端口）+ 重启 Trae。
  * argv.json 一旦写入，之后任何入口启动 Trae 调试端口都自动就绪。
  */
+interface RestartOptions {
+  /** 杀进程前等待秒数，默认 8；错误提示里的「立即重启」传 0 */
+  delaySeconds?: number;
+}
+
 async function restartWithDebug(
   context: vscode.ExtensionContext,
+  opts: RestartOptions = {},
 ): Promise<void> {
+  const delaySeconds = opts.delaySeconds ?? 8;
   const scriptPath = findRestartScript(context);
   if (!scriptPath) {
     vscode.window.showErrorMessage('找不到 restart-with-debug.ps1');
@@ -595,6 +644,7 @@ async function restartWithDebug(
     `-ExePath "${exePath}"`,
     `-Port ${cdpPort}`,
     `-LogPath "${logPath}"`,
+    `-DelaySeconds ${delaySeconds}`,
   ].join(' ');
 
   const wmiScript = [
@@ -629,7 +679,9 @@ async function restartWithDebug(
       }
       logger.info(`重启脚本已拉起: ${out}，日志 ${logPath}`);
       vscode.window.showInformationMessage(
-        'ParallelAgent 已写入调试端口配置，将在 8 秒后关闭并重启 Trae',
+        delaySeconds > 0
+          ? `ParallelAgent 已写入调试端口配置，将在 ${delaySeconds} 秒后关闭并重启 Trae`
+          : 'ParallelAgent 已写入调试端口配置，正在重启 Trae',
       );
     },
   );
