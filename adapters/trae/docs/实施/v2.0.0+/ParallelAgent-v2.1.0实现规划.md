@@ -1,6 +1,6 @@
 # ParallelAgent v2.1.0 实现规划：编排器项目级自动启动
 
-> 状态：**已实施**（2026-10-26），代码与文档完成，待真机实测
+> 状态：**已实施**（2026-10-26，含 2.1.1 / 2.1.2 / 2.1.3 补丁）
 > 前置：[ParallelAgent第二期实现规划.md](./ParallelAgent第二期实现规划.md)、[ParallelAgent方案定稿.md](../../设计/ParallelAgent方案定稿.md)、[ParallelAgent生命周期治理初稿.md](../../设计/ParallelAgent生命周期治理初稿.md)
 > 版本：**v2.1.0**
 > 一句话：把「ParallelAgent: 启动编排器」从手动命令改为**项目级自动启动**，同时保证单实例、静默失败、状态可观测。
@@ -494,21 +494,67 @@ CDP 连接（最多 3 次，间隔 2000ms）
 | 关闭占用窗口后端口释放 | 通过 |
 | 新窗口手动启动 | 通过 |
 | 同项目双窗口 | 未触发：Trae 会复用同一项目窗口，不会产生双实例；项目锁保留为异常兜底 |
-| L4 全链路 | 未执行，见 §15.5 |
+| L4 全链路 | 通过（5 步全过，含唤醒链路） |
 
-### 15.4 剩余回归范围
+### 15.4 最小 L4 回归结果（2026-10-26）
 
-不重跑 `test-docs/v2.0.0测试Prompt.md` 全量用例。本次改动只影响启动方式与 `/health` 字段，HTTP 接口语义未变；T01-T05、T08-T10 覆盖单轨、台账、卸载，与本次改动无关。
+| 步骤 | 结果 | 关键证据 |
+|---|---|---|
+| `GET /health` | PASS | `ok=true`、`cdp_alive=true`、`workspace=e:\备份\project\Temp`、`pid=11248` |
+| `POST /new` | PASS | 建轨成功，sid `6adea13010ab37552fa0eca9`；轨道写出 `就绪/T-X.md` |
+| `POST /wait-ready` | PASS | 阻塞 50 s，`就绪=["T-X"]`、`未就绪=[]` |
+| `POST /dispatch` | PASS | `ok=true`、sid 一致；12 s 后写出 T-X 回执，无源码改动、计数一致 |
+| `POST /watch` → 通知 → ack | PASS | job `w-j6jaouc4`；`notify_injected` 于 00:43:10.965；ack 于 00:43:25.253；`全部已处理=true`、`剩余待处理=[]`、job 状态 `done` |
 
-只需在自动启动实例上做一次最小 L4 回归：
+状态文件 `第2轮-v1.json` 完整记录了 `pending → notified → done` 流转。
 
-1. `GET /health` 返回 `ok`、`cdp_alive=true`、新增的 `workspace` 与 `pid`。
-2. `POST /new` 建轨成功，轨道写出 `就绪/T-X.md`。
-3. `POST /wait-ready` 返回该轨就绪。
-4. `POST /dispatch` 送达，轨道写出回执。
-5. `POST /watch` 入队 → 收到通知 → ack 后 `全部已处理=true`。
+### 15.5 观察项：Agent 页晚于编排器启动
 
-### 15.5 待验证项
+- **现象**：首次 `/new` 返回 `anchor_not_found`。编排器启动时 `GET /json` 中尚无 `solo-lite` 的 Agent 页，`filterWorkTarget` 回退到 title 含「管理员」的 IDE 工作台页；该页没有任务列表。重跑一次「ParallelAgent: 启动编排器」后 CDP 重连到 Agent 页，后续全部通过。
+- **根因**：`filterWorkTarget` 的兜底分支不区分「Work 对话页」与「IDE 工作台页」；自动启动发生在 `onStartupFinished`，早于用户打开 Agent 页。
+- **影响**：首次 L4 需要额外执行一次启动命令；不影响 2.1.0 的自动启动、单实例与状态栏行为。
+- **候选修复（不纳入本期，待确认）**：
+  1. 启动时若只有非 `solo-lite` 页，先等待一段时间（如 30 s）再回退，期间出现 Agent 页则连它。
+  2. 连到兜底页后后台轮询，发现 `solo-lite` 页出现即自动重连。
+  3. `/new`、`/dispatch` 命中 `anchor_not_found` 时自动重新发现 target 并重试一次。
 
-1. 自动启动实例的最小 L4 回归（§15.4）。
+**已采纳方案 1**（自动启动只认 Agent 页 + 等待窗口），实施记录见 §16。
+
+### 15.6 待验证项
+
+1. Agent 页晚于编排器启动时的 CDP target 重选（见 §15.5，已在 2.1.1 修复，待真机复测）。
 2. `onStartupFinished` 的 2500ms 延迟在冷启动与热启动下是否都足够（当前实测通过，保留观察）。
+
+---
+
+## 16. 2.1.1 补丁记录（2026-10-26）
+
+| 缺陷 | 修复 | 验证 |
+|---|---|---|
+| 自动启动首连错页：Agent 页晚于编排器启动时，CDP 回退到 IDE 工作台页，首次 `/new` 返回 `anchor_not_found` | 自动启动只接受 `url` 含 `solo-lite` 的 Agent 页，等待约 30 秒（15 次 × 2 秒）；超时保持 HTTP 可用、状态栏提示打开 Agent 页；手动启动保留「管理员」兜底 | `cdpTarget.filterWorkPageOnly`；`extension` 自动路径 `requireWorkPage=true`、`cdpRetries=15`；插件 `typecheck` / `build` 通过 |
+
+- 版本：扩展 / CLI `2.1.1`；vsix `parallelagent-orchestrator-2.1.1.vsix`。
+- 待真机复测：先启动编排器、后打开 Agent 页，确认 30 秒内自动连上；以及超时路径的状态栏提示。
+- **后续修正**：真机发现只认 `url` 含 `solo-lite` 会漏掉 `Agent [管理员]` 形态，见 §17。
+
+---
+
+## 17. 2.1.2 补丁记录（2026-10-26）
+
+| 缺陷 | 修复 | 验证 |
+|---|---|---|
+| 2.1.1 的 Agent 页识别过窄：只认 `url` 含 `solo-lite`，实际 Agent 页 target 常显示为 `Agent [管理员]`，被过滤后自动启动空等 30 秒；手动重连经旧兜底反而成功，表现为「自动连不上、手动能连上」 | 新增 `isAgentTarget`：`url` 含 `solo-lite`，或 title 以 `Agent` 开头且不含 `TRAE CN`；手动与自动共用该判定，旧版兜底排除 IDE 工作台页 | `audit.log` 历史 target 形态（`Agent [管理员]` / `<项目名> - TRAE CN [管理员]` / `solo-lite.html`）；插件 `typecheck` / `build` 通过；待真机复测 |
+
+- 版本：扩展 / CLI `2.1.2`；vsix `parallelagent-orchestrator-2.1.2.vsix`。
+- 观测增强：`cdp_connect` 记录 `url`，下次可直接确认 Agent 页 target 的 url 形态。
+
+---
+
+## 18. 2.1.3 补丁记录（2026-10-26）
+
+| 缺陷 | 修复 | 验证 |
+|---|---|---|
+| 自动启动 30 秒超时后，打开 Agent 页再点状态栏重连仍失败并提示「CDP 仍不可达」：手动路径只重试 1 次，Agent 页 target 尚未进入 `/json` 时一次瞬败 | 手动 `parallelagent.start` 的 CDP 重试从 1 次提升到 10 次（约 20 秒）；点击后状态栏立即显示「启动中」；连接失败写入 `cdp_connect_fail` 审计 | `typecheck` / `build` 通过；待真机复测 |
+
+- 版本：扩展 / CLI `2.1.3`；vsix `parallelagent-orchestrator-2.1.3.vsix`。
+- 诊断增强：`cdp_connect_fail` 的 `err` 可区分「枚举 targets 失败（端口不通）」「找不到 Agent 页 target（页面未就绪）」「WebSocket 连接失败」。

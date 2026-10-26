@@ -1,5 +1,25 @@
 # Changelog
 
+## 2.1.3
+
+- 手动重连与自动启动窗口对齐：`parallelagent.start` 的 CDP 重试从 1 次提升到 10 次（约 20 秒），避免 Agent 页 target 尚未出现时一次瞬败
+- 点击重连立即显示状态栏「启动中」，不再无反馈等待
+- CDP 连接失败写入审计日志 `cdp_connect_fail`（含错误信息与 `requireWorkPage`），便于区分端口不通、target 未就绪与 WebSocket 失败
+- 扩展与 CLI 版本对齐 2.1.3
+
+## 2.1.2
+
+- 修复 Agent 页识别：2.1.1 只认 `url` 含 `solo-lite`，而实际 Agent 页 target 常显示为 `Agent [管理员]`（url 不含 `solo-lite`），导致自动启动空等 30 秒仍连不上，手动重连反而经旧兜底成功
+- 新识别规则：`url` 含 `solo-lite`，或 title 以 `Agent` 开头且不含 `TRAE CN`；手动路径同样优先该规则，并排除 IDE 工作台页
+- `audit.log` 的 `cdp_connect` 增加 `url` 字段，便于核对 target 形态
+- 扩展与 CLI 版本对齐 2.1.2
+
+## 2.1.1
+
+- 修复自动启动首连错页：Agent 页晚于编排器启动时，CDP 会回退到 IDE 工作台页，导致首次 `/new` 返回 `anchor_not_found`。自动启动现在只接受 `solo-lite` 的 Agent 页，并在约 30 秒内等待页面出现；超时保持 HTTP 可用，状态栏提示打开 Agent 页
+- 手动启动仍保留「管理员」兜底，兼容旧版 Trae
+- 扩展与 CLI 版本对齐 2.1.1
+
 ## 2.1.0
 
 - 新增项目级自动启动：项目根存在 `.parallel-agent/` 时自动启动编排器；`parallelagent.autoStart` 可选 `auto`（默认）/ `on` / `off`

@@ -43,6 +43,8 @@ let autoStartTimer: ReturnType<typeof setTimeout> | null = null;
 const AUTO_START_DELAY_MS = 2500;
 /** CDP 连接重试间隔 */
 const CDP_RETRY_INTERVAL_MS = 2000;
+/** 自动启动时等待 Agent 页出现的重试次数（15 次 × 2s ≈ 30s） */
+const AUTO_START_CDP_RETRIES = 15;
 /** 用户主动停止后不再自动启动（workspaceState） */
 const AUTO_START_DISABLED_KEY = 'parallelagent.autoStartDisabled';
 
@@ -80,7 +82,7 @@ function setStatus(state: StatusState, detail?: string): void {
     cdp_down: {
       icon: '$(warning)',
       text: 'PA · CDP 未连接',
-      tip: 'HTTP 网关已启动但 CDP 不可用；可运行「ParallelAgent: 带调试端口重启 Trae」',
+      tip: 'HTTP 网关已启动但 CDP 不可用；请先打开 Agent 页，再点击重试；或运行「ParallelAgent: 带调试端口重启 Trae」',
     },
     other_window: {
       icon: '$(circle-slash)',
@@ -120,7 +122,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   context.subscriptions.push(
     vscode.commands.registerCommand('parallelagent.start', async () => {
       await context.workspaceState.update(AUTO_START_DISABLED_KEY, false);
-      await startOrchestrator(context, { silent: false, cdpRetries: 1 });
+      await startOrchestrator(context, { silent: false, cdpRetries: 10 });
     }),
     vscode.commands.registerCommand('parallelagent.stop', async () => {
       await context.workspaceState.update(AUTO_START_DISABLED_KEY, true);
@@ -154,7 +156,11 @@ function scheduleAutoStart(context: vscode.ExtensionContext): void {
   setStatus('starting');
   autoStartTimer = setTimeout(() => {
     autoStartTimer = null;
-    void startOrchestrator(context, { silent: true, cdpRetries: 3 });
+    void startOrchestrator(context, {
+      silent: true,
+      cdpRetries: AUTO_START_CDP_RETRIES,
+      requireWorkPage: true,
+    });
   }, AUTO_START_DELAY_MS);
 
   context.subscriptions.push({
@@ -189,6 +195,8 @@ interface StartOptions {
   silent?: boolean;
   /** CDP 连接尝试次数 */
   cdpRetries?: number;
+  /** 只接受 solo-lite 的 Agent 页；默认保留「管理员」兜底 */
+  requireWorkPage?: boolean;
 }
 
 async function startOrchestrator(
@@ -197,13 +205,20 @@ async function startOrchestrator(
 ): Promise<void> {
   const silent = opts.silent ?? false;
   const cdpRetries = opts.cdpRetries ?? 1;
+  const requireWorkPage = opts.requireWorkPage ?? false;
   const config = readConfig();
   currentConfig = config;
+  setStatus('starting');
 
   // 已在运行：只重试 CDP（修好端口后无需先停再启）
   if (httpServer && routeDeps) {
     logger.info('编排器已在运行，重试 CDP 连接...');
-    const connected = await connectCdpWithRetry(config, routeDeps, cdpRetries);
+    const connected = await connectCdpWithRetry(
+      config,
+      routeDeps,
+      cdpRetries,
+      requireWorkPage,
+    );
     setStatus(connected ? 'running' : 'cdp_down');
     if (!silent) {
       vscode.window.showInformationMessage(
@@ -352,7 +367,12 @@ async function startOrchestrator(
   jobs.start();
 
   // 步骤 2: 再连 CDP；失败只告警，HTTP 网关保持可用
-  const connected = await connectCdpWithRetry(config, routeDeps, cdpRetries);
+  const connected = await connectCdpWithRetry(
+    config,
+    routeDeps,
+    cdpRetries,
+    requireWorkPage,
+  );
   setStatus(connected ? 'running' : 'cdp_down');
 
   if (silent) {
@@ -394,16 +414,25 @@ async function probeHealth(
 async function connectCdp(
   config: ParallelAgentConfig,
   deps: RouteDeps,
+  requireWorkPage = false,
 ): Promise<boolean> {
   try {
-    const { client, target } = await discoverAndConnect(config.cdpPort);
+    const { client, target } = await discoverAndConnect(config.cdpPort, {
+      requireWorkPage,
+    });
     cdpClient = client;
     cdpTarget = target;
     deps.cdp = client;
-    logger.audit('cdp_connect', { targetId: target.id, title: target.title });
+    logger.audit('cdp_connect', {
+      targetId: target.id,
+      title: target.title,
+      url: target.url,
+    });
     return true;
   } catch (e) {
-    logger.error(`CDP 连接失败: ${(e as Error).message}`);
+    const msg = (e as Error).message;
+    logger.error(`CDP 连接失败: ${msg}`);
+    logger.audit('cdp_connect_fail', { err: msg, requireWorkPage });
     return false;
   }
 }
@@ -418,10 +447,11 @@ async function connectCdpWithRetry(
   config: ParallelAgentConfig,
   deps: RouteDeps,
   attempts: number,
+  requireWorkPage = false,
 ): Promise<boolean> {
   const total = Math.max(1, attempts);
   for (let i = 0; i < total; i++) {
-    if (await connectCdp(config, deps)) return true;
+    if (await connectCdp(config, deps, requireWorkPage)) return true;
     if (i < total - 1) await sleep(CDP_RETRY_INTERVAL_MS);
   }
   return false;
