@@ -1,73 +1,35 @@
 # Changelog
 
-## 2.1.5
-
-- 移除「带调试端口重启 Trae」的 8 秒等待，所有重启入口统一立即执行
-- 重启脚本删除 `-DelaySeconds` 参数，日志改为 `restart immediately`
-- 扩展与 CLI 版本对齐 2.1.5
-
-## 2.1.4
-
-- CDP 端口未监听（`ECONNREFUSED`）时弹出明确提示：「频繁重启导致 CDP 端口绑定失败，下次重启后恢复」，提供「立即重启」与「忽略」
-- 「立即重启」复用带调试端口重启脚本并跳过等待；命令面板的「带调试端口重启 Trae」仍保留 8 秒供保存
-- 重启脚本新增 `-DelaySeconds` 参数（默认 8，错误提示路径传 0）
-- 扩展与 CLI 版本对齐 2.1.4
-
-## 2.1.3
-
-- 手动重连与自动启动窗口对齐：`parallelagent.start` 的 CDP 重试从 1 次提升到 10 次（约 20 秒），避免 Agent 页 target 尚未出现时一次瞬败
-- 点击重连立即显示状态栏「启动中」，不再无反馈等待
-- CDP 连接失败写入审计日志 `cdp_connect_fail`（含错误信息与 `requireWorkPage`），便于区分端口不通、target 未就绪与 WebSocket 失败
-- 扩展与 CLI 版本对齐 2.1.3
-
-## 2.1.2
-
-- 修复 Agent 页识别：2.1.1 只认 `url` 含 `solo-lite`，而实际 Agent 页 target 常显示为 `Agent [管理员]`（url 不含 `solo-lite`），导致自动启动空等 30 秒仍连不上，手动重连反而经旧兜底成功
-- 新识别规则：`url` 含 `solo-lite`，或 title 以 `Agent` 开头且不含 `TRAE CN`；手动路径同样优先该规则，并排除 IDE 工作台页
-- `audit.log` 的 `cdp_connect` 增加 `url` 字段，便于核对 target 形态
-- 扩展与 CLI 版本对齐 2.1.2
-
-## 2.1.1
-
-- 修复自动启动首连错页：Agent 页晚于编排器启动时，CDP 会回退到 IDE 工作台页，导致首次 `/new` 返回 `anchor_not_found`。自动启动现在只接受 `solo-lite` 的 Agent 页，并在约 30 秒内等待页面出现；超时保持 HTTP 可用，状态栏提示打开 Agent 页
-- 手动启动仍保留「管理员」兜底，兼容旧版 Trae
-- 扩展与 CLI 版本对齐 2.1.1
-
-## 2.1.0
-
-- 新增项目级自动启动：项目根存在 `.parallel-agent/` 时自动启动编排器；`parallelagent.autoStart` 可选 `auto`（默认）/ `on` / `off`
-- 新增项目级单实例锁 `.parallel-agent/信号/orchestrator.lock`：同一项目多窗口只启动一个实例，PID 失效自动清理
-- 自动启动失败改为静默：状态栏显示运行中 / CDP 未连接 / 已在其他窗口运行 / 端口冲突 / 已停止，不再弹错误框
-- 用户主动停止后本窗口不再自动启动；手动执行启动命令清除该标记
-- `/health` 增加 `workspace` 与 `pid` 字段，用于端口归属判定与诊断（向后兼容）
-- CDP 连接在启动期重试 3 次（间隔 2 秒），适配 Work 页面延迟就绪
-- 扩展与 CLI 版本对齐 2.1.0
-
-## 2.0.2
-
-- 修复 D-04：回执计数与实检不一致。回执模板新增「命令与计数」必填项，测试数/通过数/文件数/行数必须引自本次实际命令输出，禁止估算或沿用上一轮结果；仲裁者实检时核对并记入快照
-- 单轨台账证据规则同步禁止“估算/沿用旧结果”的计数
-- 扩展代码无变更，版本与 CLI 对齐
-
-## 2.0.1
-
-- 修复 D-01：存在历史 active 轨记录时，`/dispatch` 会命中旧 sid 并返回 `anchor_not_found`。现在新建同名轨时旧记录自动置 `deleted`；`/dispatch` 按创建时点倒序尝试候选 sid，失效记录自动清理后继续下一条
-- 修复 D-03：`doctor` 台账检查改为按条目判断真实未回填，已被后续条目回填的历史“未提交”措辞不再误报
-- 扩展与 CLI 版本对齐 2.0.1
-
 ## 2.0.0
 
 > 设计见 `adapters/trae/docs/实施/v2.0.0+/ParallelAgent第二期实现规划.md`
+> 说明：2.0.0 为本地测试版本，早期迭代标识未正式 PR 或发布；相关变更统一归入 2.0.0。
+
+### 入口分流与单轨
 
 - 新增入口分流（L0-L4）：单轨与多轨共用同一份判据，用户不必先说“拆开跑”
 - 新增 `parallelagent-solo` Skill：L0 直做、L1 问清、L2 探路、L3 立规；L4 只写任务卡并移交仲裁者
 - 新增单轨台账 `.parallel-agent/单轨/台账/YYYY-MM.md`：小改动不写 PRD，但每次改动必须留痕（需求/改动/证据/结论）
 - 新增共享 reference `分流.md`、`台账.md`；仲裁者 §0 先分流，§4 强拆判据改为引用同一份文件
 - 协议目录新增 `单轨/`，明确单轨只写单轨目录、多轨只写转达/回执/快照
-- CLI：安装 3 个 Skill；同时安装共享 reference 到 `~/.trae-cn/shared/references/`，修复已装 Skill 引用缺失
-- CLI：`doctor` 增加单轨台账校验（Q3=B：只告警，不改变退出码）
-- CLI：`uninit` 同步清理新增 Skill 与共享 reference
-- 扩展代码无变更，版本与 CLI 对齐
+- CLI：安装 3 个 Skill 与共享 reference；`doctor` 增加单轨台账校验（只告警，不改变退出码）；`uninit` 同步清理
+
+### 多轨缺陷修复
+
+- 修复 D-01：历史 active 轨记录导致 `/dispatch` 命中旧 sid；新建同名轨时旧记录置 `deleted`，`/dispatch` 按创建时点倒序尝试候选 sid
+- 修复 D-03：`doctor` 台账检查改为按条目判断真实未回填
+- 修复 D-04：回执新增「命令与计数」必填项，测试数/通过数/文件数/行数必须引自实际命令输出，禁止估算或沿用旧结果
+
+### 编排器项目级自动启动
+
+- 项目根存在 `.parallel-agent/` 时自动启动；`parallelagent.autoStart` 可选 `auto`（默认）/ `on` / `off`
+- 项目级单实例锁 `.parallel-agent/信号/orchestrator.lock`：同一项目多窗口只启动一个实例，PID 失效自动清理
+- 自动启动失败静默：状态栏显示运行中 / CDP 未连接 / 已在其他窗口运行 / 端口冲突 / 已停止
+- 用户主动停止后本窗口不再自动启动；手动执行启动命令清除该标记
+- `/health` 增加 `workspace` 与 `pid` 字段
+- Agent 页 target 识别：`url` 含 `solo-lite`，或 title 以 `Agent` 开头且不含 `TRAE CN`；自动启动等待约 30 秒，手动重连约 20 秒
+- CDP 连接失败写入 `cdp_connect_fail` 审计（含 `url`），便于区分端口不通、target 未就绪与连接失败
+- `ECONNREFUSED` 时提示「频繁重启导致 CDP 端口绑定失败，下次重启后恢复」，提供「立即重启 / 忽略」；所有重启入口统一立即执行，无 8 秒等待
 
 ## 1.2.6
 
