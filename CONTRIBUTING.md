@@ -94,7 +94,7 @@ git log -1 --format='A: %an <%ae> | C: %cn <%ce>'
 4. 开 PR，填清楚：改了什么、为什么、怎么验证
 5. 等 CI 全绿 + review approval
 6. 由维护者合并（默认 squash merge）
-7. 删除远端工作分支
+7. 删除远端工作分支（可选）；里程碑或发布分支（如 `release/v2.0.0`）应保留
 
 > 合并后本地同步用 `git pull --ff-only`，不要本地 `merge` 后直接 push `main`。
 
