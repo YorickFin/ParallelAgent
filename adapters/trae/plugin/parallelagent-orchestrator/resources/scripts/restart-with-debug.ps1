@@ -7,12 +7,10 @@
 #   -ExePath  Trae 可执行文件绝对路径（扩展用 process.execPath 获取）
 #   -Port     CDP 端口（仅用于重启后连通性自检）
 #   -LogPath  日志路径（扩展传入 globalStorage 下的 restart.log）
-#   -DelaySeconds  杀进程前的等待秒数（默认 8；错误提示里的「立即重启」传 0）
 param(
     [Parameter(Mandatory = $true)][string]$ExePath,
     [Parameter(Mandatory = $true)][int]$Port,
-    [string]$LogPath = (Join-Path $env:TEMP 'parallelagent-restart.log'),
-    [int]$DelaySeconds = 8
+    [string]$LogPath = (Join-Path $env:TEMP 'parallelagent-restart.log')
 )
 
 $ErrorActionPreference = 'Continue'
@@ -22,9 +20,8 @@ if ($logDir -and -not (Test-Path $logDir)) {
     New-Item -ItemType Directory -Force -Path $logDir | Out-Null
 }
 
-"$(Get-Date -Format o) launch, exe=$ExePath port=$Port, wait ${DelaySeconds}s" | Out-File -FilePath $log -Encoding utf8
+"$(Get-Date -Format o) launch, exe=$ExePath port=$Port, restart immediately" | Out-File -FilePath $log -Encoding utf8
 if (-not (Test-Path $ExePath)) { "$(Get-Date -Format o) FATAL: exe not found: $ExePath" | Out-File -FilePath $log -Append -Encoding utf8; exit 1 }
-Start-Sleep -Seconds $DelaySeconds
 
 # 进程名取 exe 文件名去后缀（如 "Trae CN"）
 $procName = [System.IO.Path]::GetFileNameWithoutExtension($ExePath)

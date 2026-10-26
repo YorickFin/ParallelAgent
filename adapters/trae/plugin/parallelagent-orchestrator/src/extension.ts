@@ -426,7 +426,7 @@ async function promptRestartIfPortRefused(
     '忽略',
   );
   if (choice === '立即重启') {
-    await restartWithDebug(context, { delaySeconds: 0 });
+    await restartWithDebug(context);
   }
   return true;
 }
@@ -569,19 +569,12 @@ async function healthCheck(): Promise<void> {
 }
 
 /**
- * A2：写 argv.json（持久化调试端口）+ 重启 Trae。
+ * A2：写 argv.json（持久化调试端口）+ 立即重启 Trae。
  * argv.json 一旦写入，之后任何入口启动 Trae 调试端口都自动就绪。
  */
-interface RestartOptions {
-  /** 杀进程前等待秒数，默认 8；错误提示里的「立即重启」传 0 */
-  delaySeconds?: number;
-}
-
 async function restartWithDebug(
   context: vscode.ExtensionContext,
-  opts: RestartOptions = {},
 ): Promise<void> {
-  const delaySeconds = opts.delaySeconds ?? 8;
   const scriptPath = findRestartScript(context);
   if (!scriptPath) {
     vscode.window.showErrorMessage('找不到 restart-with-debug.ps1');
@@ -644,7 +637,6 @@ async function restartWithDebug(
     `-ExePath "${exePath}"`,
     `-Port ${cdpPort}`,
     `-LogPath "${logPath}"`,
-    `-DelaySeconds ${delaySeconds}`,
   ].join(' ');
 
   const wmiScript = [
@@ -679,9 +671,7 @@ async function restartWithDebug(
       }
       logger.info(`重启脚本已拉起: ${out}，日志 ${logPath}`);
       vscode.window.showInformationMessage(
-        delaySeconds > 0
-          ? `ParallelAgent 已写入调试端口配置，将在 ${delaySeconds} 秒后关闭并重启 Trae`
-          : 'ParallelAgent 已写入调试端口配置，正在重启 Trae',
+        'ParallelAgent 已写入调试端口配置，正在重启 Trae',
       );
     },
   );
