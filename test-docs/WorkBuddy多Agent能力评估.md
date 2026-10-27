@@ -21,12 +21,18 @@
 | 成员写文件（契据/台账可落盘） | **PASS** | 成员独立写入 `.workbuddy/probe/track-a.log` |
 | 上下文跨销毁复活 | **PASS** | `TeamDelete` 后按 agent id `resume`，仍答出暗号 |
 | 进程级轨道隔离（detached-process） | **FAIL** | 桌面端白名单环境，三次尝试均无法注入，无官方入口 |
-| 外部控制器（CDP 建/切/派/删轨道） | **FAIL** | 无等价能力，生命周期全绑在主理人回合内 |
+| 外部控制器（跨窗口建/切/派/删） | **FAIL** | 无跨 IDE/跨窗口控制；进程内已有语义等价物（TeamCreate/Agent/SendMessage） |
 | fail-stop 身份断言 / 锚点校验 | **FAIL** | 仅 `name@team` 标识，无断言机制 |
 | 声明式 Workflow（深研扇出） | **BLOCKED** | 引擎存在（`deep-research.workflow.js`），但本会话未向模型暴露 Workflow 工具 |
 | XERJ MCP 接入 | **PASS** | 补 `mcp.json` 后工具可用，实测 761 命中 |
 
-**总判定**：ParallelAgent 的**数据面协议**（文件契据、主理人中转、轮次推进、上下文持久）可在 WorkBuddy 内复现；**控制面**（进程隔离、外部控制器、身份断言）不可复现。
+**总判定**（分三层看，不要笼统按「数据面/控制面」切）：
+
+| 层 | 内容 | WorkBuddy 能否承载 |
+|---|---|---|
+| **治理层**（核心价值） | L0-L4 入口分流、单轨台账、多轨契据/回执/快照、基于文档的可溯源性 | ✅ 能，`SKILL.md` + 成员写文件即可，不需要任何插件 |
+| **执行器层**（可替换） | 建/切/派/删轨道会话、唤醒、收工 | ✅ 有对应物：`TeamCreate` / `Agent` / `SendMessage` / `shutdown_request` |
+| **隔离与自愈层** | 进程级轨道隔离、外部 `/watch`、崩溃后重建、fail-stop 身份断言 | ❌ 无，且当前无解 |
 
 ---
 
@@ -193,7 +199,26 @@ round3 by=track-a turns=3
 - 能力：分阶段、并行扇出（5 路搜索）、URL 去重、3 票对抗验证、合成带引用报告；有 runId/journal、`/workflows`、`workflow/control` 暂停跳过、定时 workflow；自定义脚本目录 `.codebuddy/workflows/`
 - **但本会话未向模型暴露 Workflow 工具**（`CODEBUDDY_DISABLE_WORKFLOWS` 未设置，属未启用），只能以 Agent + 任务列表手写等价编排
 
+### 补充：一套引擎，四种入口（澄清「两套 subAgent」的误解）
+
+确有「团队模式」与「普通子代理」两种用法，但**不是两套实现**，是同一执行引擎的两种入口：
+
+| 证据 | 结论 |
+|---|---|
+| 两者转写都存在 `projects/<proj>/<sessionId>/subagents/agent-<id>.jsonl`，格式一致（`message` / `reasoning` / `function_call` / `function_call_result`） | 同一套会话存储 |
+| 团队成员的 `.jsonl` 里出现 `team` 相关字段 15 次，普通子代理 **0 次** | 差异只是团队注册信息 |
+| 团队成员首条 user message 被包成 `<teammate-message teammate_id="team-lead" summary="...">`；普通子代理是裸 prompt | 差异只是**消息信封** |
+| 两者都由 `Agent` 工具拉起；带 `name` 时注册进 `TeamManager` 并获得信箱 | 同一入口、不同参数 |
+
+即在引擎之上只加了一层薄壳：`TeamManager`（成员注册）+ `TeamMailbox`（`inboxes/*.json`）+ 空闲跟踪。
+
+除此之外还有两个**并列的面**，但都不是第二套 subAgent：
+
+- **Agent Home**：`colleague` / `channel` / `ChannelTasks`，面向 IM 的多智能体协作面；以 colleague job 身份运行时**会显式禁用团队**（`isAgentHomeJobBlockingAgentTeams`）
+- **Workflow 引擎**：声明式编排（`meta` + `phase/agent/parallel/pipeline`），与团队是两套调度，本会话未挂载
+
 ---
+
 
 ## 3. 与 ParallelAgent 的架构对比
 
@@ -237,26 +262,41 @@ reasoning              7,161 字符  (15%)
 
 ## 5. 结论与选型建议
 
-### 可复现（数据面）
+### 5.1 先纠正一个框架错误（勘误）
 
-- 文件契约、台账、回执、快照的落盘与读取
-- 主理人调度多成员、按轮次推进、汇总产出
-- 成员产出经主理人中转（**靠纪律约束，非机制强制**）
-- 上下文持久化与按 id 复活
+本报告初版把 ParallelAgent 的核心价值定在「控制面（CDP）」，由此推出「不要迁到 WorkBuddy」。这个推理是错的，错在**把「WorkBuddy 缺什么」当成了「ParallelAgent 的核心是什么」**——这是两个不同的问题。
 
-### 不可复现（控制面）
+按项目自身的表述，CDP 只是 L4 多轨的**执行器**：
 
-- 进程级轨道隔离：主进程一死，全部轨道同时死；无法外部单独 kill/重启某条轨
-- 外部控制器：无 CDP，无跨窗口/跨 IDE 操作
-- fail-stop：无身份断言，无锚点校验
-- 后台 job 与唤醒话术注入
+- README：「**单轨 L0-L3 不依赖插件**」——治理规则完全跑在 CDP 之外
+- README：「多轨三件套」里，CDP 只是第三件（编排器插件）的实现手段
+- 定稿方案：数据面标注为「100% 文件，**可溯源**」
 
-### 建议
+也就是说，CDP 是 **Trae 未提供会话 API 时的补丁**：因为无法用 API 建/切/派会话，才退回用 CDP 驱动 UI。换一个宿主，这个补丁本该被换掉，而不是被当成价值本身。
 
-1. **不要把 ParallelAgent 迁到 WorkBuddy 的团队模式上**。控制面是它的核心价值，而不是数据面。
-2. 若只需「单项目内多 Agent 并行 + 文档驱动流程」，WorkBuddy 原生够用，无需 CDP 插件：`TeamCreate` + `Agent` + `SKILL.md` 即可。
-3. 两者可互补：WorkBuddy 承担「调研/写作/文档处理」类串行深任务，ParallelAgent 承担「代码多轨并行交付」。数据面都走文件，交接成本低。
-4. 若追求进程隔离且必须留在 WorkBuddy 内：**当前无解**，等官方开放后端开关。不推荐改安装文件或 hook 进程。
+### 5.2 三层重新定位
+
+| 层 | 是不是核心价值 | WorkBuddy 承载情况 |
+|---|---|---|
+| 治理层：入口分流 + 单轨台账 + 多轨契据/回执/快照 + 文档可溯源 | **是核心** | ✅ 能承载。`SKILL.md` 表达流程，成员自由读写仓库文件，台账/契据/回执全部可落盘（W08 已验证） |
+| 执行器层：建/切/派/删轨道、唤醒、收工 | 不是核心，是可替换件 | ✅ 有替代物。`TeamCreate` / `Agent(name=)` / `SendMessage` / `shutdown_request`，语义等价 |
+| 隔离与自愈层：进程级隔离、外部 `/watch`、崩溃重建、fail-stop 断言 | 服务于「溯源可信」，是**加固**而非目的 | ❌ 缺失，且当前无解（W04） |
+
+### 5.3 修正后的建议
+
+1. **ParallelAgent 的核心（工作流 + 基于文档的可溯源性）在 WorkBuddy 内是可承载的**，且不需要 CDP——因为 WorkBuddy 自带会话调度，补丁本身没有存在必要。
+2. **真正无法搬运的是「隔离与自愈」**：主进程一死全部轨道同死，没有外部调度器在崩溃后按文件重建轨道，没有身份断言拦截越界下发。这会让「溯源」从「强保证」降级为「事后可查」。
+3. 换句话说：**迁过去会丢掉的是「可信度等级」，不是「工作流本身」**。评估重点应从「能不能并行」转为「治理强度能保住几成」。
+4. 若坚持进程级隔离：当前只能留在 Trae + 编排器插件，或在 WorkBuddy 外另起宿主自建 API 调度。
+
+### 5.4 给本项目后续评估的口径建议
+
+| 要问的问题 | 不该用的口径 | 应改用的口径 |
+|---|---|---|
+| 能不能搬 | 「WorkBuddy 有没有 CDP」 | 「治理规则能不能用文档表达、产物能不能落盘」 |
+| 搬了损失什么 | 「少了控制面」 | 「可溯源性从强制降级为事后可查、崩溃后无人自愈」 |
+| 要不要两套 | —— | 数据面统一用文件，宿主只提供调度，宿主可替换 |
+
 
 ---
 
