@@ -1,7 +1,5 @@
-# 调试与探针产物
+# 调试与日志
 *.log
-commands-dump*.json
-probe-b-result.json
 
 # 系统/编辑器
 Thumbs.db
@@ -18,17 +16,14 @@ Thumbs.db
 *.pem
 *.key
 
-# ParallelAgent 运行数据
+# ParallelAgent 运行数据与本地工作台
 .parallel-agent/
 .pa-test/
-
-# 依赖与构建产物
-node_modules/
-dist/
-*.vsix
-
-# Trae 工作区临时文件
 .trae/
-
-# 其他 Agent 工作台本地状态
 .workbuddy/
+.screenshots/
+
+# 依赖与发布产物
+node_modules/
+packages/cli/assets/
+packages/cli/*.tgz
