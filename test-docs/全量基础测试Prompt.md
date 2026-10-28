@@ -432,7 +432,8 @@ git status --short
 6. 追加一条**更正条目**，引用一个已有 ID（例如更正某条证据命令的笔误），提交后确认：
    - 历史条目未被改写；
    - 更正条目引用了原 ID；
-   - doctor 不会把历史“未提交”误报为欠账（D-03 回归）。
+   - doctor 不会把历史“未提交”误报为欠账（D-03 回归）；
+   - 更正条目不应被 doctor 判为“字段不全”（D-01 回归）。
 7. 运行 doctor，确认台账检查为 `OK` 或仅给出合理 `WARN`。
 
 #### T09 单轨冷启动（需要我配合）
@@ -496,7 +497,9 @@ git status --short
 Invoke-RestMethod -Method Post -Uri http://127.0.0.1:9318/bind-arbiter -ContentType 'application/json' -Body '{}' | ConvertTo-Json -Depth 10
 ```
 
-预期：`{ok:true, sid, 任务名}`。若返回 `signal_invalid`（当前没有选中会话），先让我选中仲裁者会话再重试。
+预期：`{ok:true, sid, 任务名}`。若返回 `signal_invalid`：
+- `当前没有选中会话` → 先让我选中仲裁者会话再重试；
+- **`是 active 轨道`**（D-04 修复后新增）→ 说明当前选中的是某条轨的会话，请让我切回仲裁者会话后再重试，不要尝试用 `/delete` 清理轨道会话。
 
 3. 记录 `since` 时点，然后开 3 轨：
 
@@ -598,7 +601,7 @@ foreach ($t in 'T-A','T-B','T-C') {
 
 > 本用例必须让仲裁者会话真正空闲，才能验证插件注入。不要用轮询代替。
 
-1. 若 T11 之后切换过会话，先重新执行 `POST /bind-arbiter`，确认绑定目标仍是当前仲裁者会话。
+1. 若 T11 之后切换过会话，先重新执行 `POST /bind-arbiter`，确认绑定目标仍是当前仲裁者会话。**若返回 `signal_invalid` 且提示 "是 active 轨道"，说明切到了轨道会话，请让我切回仲裁者会话后再重试，不要尝试用 `/delete` 清理轨道会话。**
 2. 准备第 2 轮小任务：写 `.parallel-agent/转达/第2轮/T-A-v1.md`，任务只在 T-A 领地内做一个小改动（例如新增一个纯函数或注释），给出验收命令。
 
 3. 提交第 2 轮 watch：
@@ -669,7 +672,8 @@ Invoke-RestMethod -Method Post -Uri http://127.0.0.1:9318/delete -ContentType 'a
 5. 负向检查：
    - `GET /ping` 不带 `sid` → `signal_invalid`；
    - `POST /dispatch` 不带 `轨` → `signal_invalid`；
-   - `POST /delete` 不带 `sid` → `signal_invalid`。
+   - `POST /delete` 不带 `sid` → `signal_invalid`；
+   - `POST /delete` 对已删除/不存在的 sid → `ok:false`、`signal_invalid`，不是 500（D-02 回归）。
 6. 记录：两次 sid、身份表/`/health` 前后状态、delete 结果、负向响应。
 
 ### 7. 环境兼容用例（T16-T18）

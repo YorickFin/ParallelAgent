@@ -1,5 +1,11 @@
 # Changelog
 
+## 未发布
+
+- 修复 D-04：`/bind-arbiter` 拒绝绑定 active 轨道会话，避免唤醒错投并覆盖轨身份
+- 修复 D-01：`doctor` 跳过“更正”条目的字段完整性检查，避免误报台账 WARN
+- 修复 D-02：`/delete` 对已失效 sid 返回 `signal_invalid`，不再返回 500
+
 ## 2.0.0
 
 > 设计见 `adapters/trae/docs/实施/v2.0.0+/ParallelAgent第二期实现规划.md`

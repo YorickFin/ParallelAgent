@@ -78,8 +78,16 @@ function checkLedger(): CheckResult {
     };
   }
 
+  /** 判断是否为"更正"条目（标题行含 "· 更正"），此类条目的字段要求不同，跳过完整性检查 */
+  const isCorrection = (text: string): boolean => {
+    const heading = text.split(/\r?\n/, 1)[0] ?? '';
+    return /·\s*更正/.test(heading);
+  };
+
   const required = ['需求', '改动', '证据', '结论'];
-  const incomplete = recent.filter((entry) => !required.every((field) => entry.includes(field)));
+  const incomplete = recent.filter(
+    (entry) => !isCorrection(entry) && !required.every((field) => entry.includes(field)),
+  );
   if (incomplete.length > 0) {
     return {
       label: '单轨台账',
