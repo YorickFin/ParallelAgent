@@ -80,6 +80,10 @@ test-docs/                   # 版本测试报告
   - 编排器项目级自动启动（存在 `.parallel-agent/` 时自动启动）+ 项目级单实例锁 + 静默失败状态栏
   - Agent 页 target 识别（兼容 `solo-lite` 与 `Agent [管理员]` 形态），自动/手动重连均有等待窗口
   - CDP 端口绑定失败时提示「立即重启 / 忽略」，所有重启入口统一立即执行
+- v2.1.0：
+  - 修复 D-04 `/bind-arbiter` 绑定 active 轨道、D-01 `doctor` 更正条目误判、D-02 `/delete` 失效 sid 返回码
+  - 新增 TRAE 更新后全量基础测试 Prompt、最小功能可用性全量测试与全量基础测试报告
+  - TRAE 3.4.8 全量基础测试通过（T00-T15、T17；T16 部分平台限制 BLOCKED）
 
 真实多轨验证项目：[slate-desktop](https://github.com/YorickFin/slate-desktop)。
 
