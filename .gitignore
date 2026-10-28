@@ -29,3 +29,6 @@ dist/
 
 # Trae 工作区临时文件
 .trae/
+
+# 其他 Agent 工作台本地状态
+.workbuddy/

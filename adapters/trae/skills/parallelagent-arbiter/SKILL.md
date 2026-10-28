@@ -230,6 +230,8 @@ await fetch('http://127.0.0.1:9318/bind-arbiter', { method: 'POST' });
 // 插件读取当前选中会话 sid 并写入身份表；绑定失败则只写状态文件、不注入通知
 ```
 
+**绑定保护**：`/bind-arbiter` 会拒绝绑定到 active 轨道会话，返回 `signal_invalid` 并提示 `是 active 轨道`。收到该错误时，先切回仲裁者会话再重试，不要用 `/delete` 清理轨道。
+
 **调用示例一（开轨握手：写转达单 → new → 等就绪 → dispatch）**：
 ```javascript
 const since = Date.now(); // 记录发送前时点，用于过滤历史就绪文件

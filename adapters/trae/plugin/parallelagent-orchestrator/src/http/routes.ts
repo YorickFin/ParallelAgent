@@ -5,7 +5,7 @@ import type { CdpClient } from '../cdp/cdpClient';
 import type { OrbitTable } from '../state/orbitTable';
 import type { WatchJobManager } from '../mailbox/watchJob';
 import * as actions from '../cdp/actions';
-import { ParallelAgentError } from '../errors';
+import { AnchorNotFound, ParallelAgentError } from '../errors';
 import * as logger from '../logger';
 
 // ── 话术模板表（定稿 §9.6 + v1.2.0 两条） ─────────────
@@ -337,7 +337,19 @@ async function handleDelete(
     return { ok: false, err: 'CDP 未连接', type: 'cdp_unavailable' };
   }
 
-  await actions.deleteTask(cdp, body.sid);
+  try {
+    await actions.deleteTask(cdp, body.sid);
+  } catch (e) {
+    // 只把 "导航时 sid 不存在" 视为会话已失效；菜单/弹窗锚点缺失仍按 500 抛出
+    if (
+      e instanceof AnchorNotFound &&
+      /navigate 失败: sid=.*result=NOT_FOUND/.test(e.message)
+    ) {
+      deps.orbit.remove(body.sid);
+      return { ok: false, err: `会话 ${body.sid} 不存在`, type: 'signal_invalid' };
+    }
+    throw e;
+  }
   deps.orbit.remove(body.sid);
 
   return { ok: true };
@@ -557,6 +569,16 @@ async function handleBindArbiter(
     return {
       ok: false,
       err: '当前没有选中会话，无法绑定仲裁者',
+      type: 'signal_invalid',
+    };
+  }
+
+  // D-04 修复：禁止绑定到 active 轨道会话；避免唤醒错投并覆盖轨身份
+  const record = deps.orbit.getBySid(s.sid);
+  if (record?.角色 === 'orbit' && record.状态 === 'active') {
+    return {
+      ok: false,
+      err: `当前选中会话 ${s.sid} 是 active 轨道（${record.轨}），请先切回仲裁者会话再调用 /bind-arbiter`,
       type: 'signal_invalid',
     };
   }
