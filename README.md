@@ -1,92 +1,84 @@
 # ParallelAgent
 
-在 Trae 中实现 **AI 开发治理**：单轨串行打底，多轨并行加速。入口按需求清晰度与规模自动分流；单轨改动必须落台账，多轨由仲裁者统一决策并落笔契约，协作内容全部走文件信箱，编排器插件只负责执行动作。
+把 AI 开发治理收敛成**一套纯文本协议 + 一套模板 + 三个 Skill**：单轨串行打底，多轨交给宿主原生 subagent 并行。v3 不再依赖编排器插件、HTTP 网关或 CDP。
 
-## 🚀 快速开始
+## 快速开始
 
-前置：Windows + Trae CN + Node.js ≥ 18。
+前置：Node.js ≥ 18；Trae CN（一期验证宿主）。
 
 ```powershell
 npx parallelagent@latest init
 ```
 
-一条命令完成四件事：
+默认安装到 Trae CN：
 
-- 从 Open VSX 下载 `.vsix` 并本地安装（失败回退 GitHub Release）
-- 铺三个全局 Skill 到 `~/.trae-cn/skills/`
-- 铺共享 reference 到 `~/.trae-cn/shared/references/`
-- 向 `~/.trae-cn/argv.json` 写入调试端口 9317
+- `~/.trae-cn/skills/`：`parallelagent-solo`、`parallelagent-arbiter`、`parallelagent-track`
+- `~/.parallel-agent/references/`：`协议.md`、`分流.md`、`台账.md`
+- `~/.parallel-agent/templates/`：8 份模板
+- `~/.parallel-agent/hosts/`：能力档案模板 + Trae CN 预置实测值
+- `~/.parallel-agent/能力档案/`：首次运行后由 Agent 写入
+- `~/.parallel-agent/install-state.json`：安装版本与文件校验和
 
-> 在 Trae 终端执行，或把命令交给 Trae 的 Agent 执行。独立 PowerShell / cmd 窗口可能不走 TUN 或系统代理，下载易失败；此时先手动下载 `.vsix`，再用 `init --vsix <路径>` 离线安装。
+常用选项：
 
-之后：
-
-- **单轨（L0-L3）**：直接在 Trae 里提开发请求，由 `parallelagent-solo` 分流并执行，无需启动编排器。
-- **多轨（L4）**：`Ctrl+Shift+P → ParallelAgent: 启动编排器`，再对仲裁者说“拆开跑”。
-
-| 命令 | 作用 |
+| 选项 | 说明 |
 |---|---|
-| `npx parallelagent@latest init` | 安装（幂等） |
-| `npx parallelagent@latest doctor` | 环境自检，全绿时退出码 0 |
-| `npx parallelagent@latest uninit` | 卸载扩展 + 清 Skills + 还原 argv.json |
+| `--host <trae-cn\|workbuddy\|claude-code>` | 目标宿主，默认 `trae-cn` |
+| `--root <目录>` | 安装根目录，默认用户主目录 |
+| `--skills-dir <目录>` | 覆盖 Skill 安装目录 |
+| `--dry-run` | 只打印动作，不写文件 |
+| `--force` | 覆盖用户改过的产品文件 |
+| `--help` | 显示帮助 |
 
-## 🧩 设计
+从 v2 升级：v3 不再安装扩展，请先卸载旧的 `yorickfin.parallelagent-orchestrator`，并手动清理 `~/.trae-cn/shared/references/`；v3 会把三个 Skill 覆盖到 `~/.trae-cn/skills/`。
 
-- **入口分流**：按清晰度 / 规模 / 风险判定 L0-L4；单轨 L0-L3 不依赖插件
-- **单轨治理**：L0 直做、L1 问清、L2 探路、L3 立规；小改动不写 PRD，但每次改动必须写入单轨台账
-- **多轨三件套**：仲裁者 Skill（决策、落笔、实检）、轨道 Skill（接收任务、执行、回执）、编排器插件（CDP + HTTP 网关 + 信箱 watch）
-- **数据面 100% 文件**：契约、转达、回执、快照、交接手册、单轨台账全部落盘
-- **控制面只传信号**：仅含轨号 + 轮次 + 文件指针，绝不传任务内容
-- **后台等待**：`/watch` 提交 job 即返回；仲裁者空闲且输入框为空时注入固定话术唤醒
-- **fail-stop**：找不到锚点或身份断言失败立即停机，不做未校验的下发
+## 设计
+
+- **治理层**：L0-L4 分流、单轨台账、多轨契约/回执/快照，全部纯文本
+- **执行器层**：宿主原生 subagent；按「能力档案」参数化，默认单批 ≤ 5
+- **加固层**：隔离、围观、中断等能力按宿主提供情况降级或明确拒绝
+- **入口分流**：L0-L3 单轨；L4 由仲裁者读能力档案、写契约、分批 spawn、扫描越界、落快照
+- **数据面 100% 文件**：契约、转达、回执、快照、交接手册、台账全部落盘
+- **无插件、无 HTTP、无 CDP**：不注册服务，不改宿主配置
 
 ```
 用户请求 ──▶ 入口分流（L0-L3 单轨 / L4 多轨）
                 │
                 ├─ L0-L3：当前会话 ──▶ 单轨台账
                 │
-                └─ L4：仲裁者会话（主控） ──控制信号──▶ 编排器插件（CDP/HTTP/watch）
-                              ▲ 文件                          │ 建/切/派/删
-                              │                              ▼
-                              └──── 文件信箱 ◀── 轨道会话 T-A/B/C/D
+                └─ L4：仲裁者会话
+                          │ 读能力档案
+                          ├─ 默认：subagent 执行器
+                          └─ 可选：加固层执行器（待定）
+                                     │
+                          文件信箱 ◀──┴──▶ 轨道
 ```
 
-## 📁 目录
+## 目录
 
 ```
-adapters/
-└── trae/                    # Trae 适配层
-    ├── docs/                # 方案与设计文档
-    ├── plugin/              # 编排器插件
-    ├── probes/              # 开发期探针脚本
-    ├── shared/              # 共享 reference（协议 / 分流 / 台账）
-    └── skills/              # 仲裁者 / 轨道 / 单轨 Skill
-
-packages/
-└── cli/                     # npm 包 parallelagent
-
-test-docs/                   # 版本测试报告
+skills/       # 三个 Skill（solo / arbiter / track）
+references/   # 协议 / 分流 / 台账
+templates/    # 8 份空白模板
+hosts/        # 能力档案模板与宿主预置值
+packages/cli/ # npx 安装器（零运行时依赖）
+docs/         # 设计与实施方案
+test-docs/    # 测试模版、报告、评估
 ```
 
-## 📌 状态
+## 状态
 
-- 一期：编排器插件全流程（`/health` `/new` `/ping` `/dispatch` `/watch` `/delete`）联调通过
-- v1.1.0：版本化信箱、开轨就绪握手、单轨单在途消息
-- v1.2.0：`/watch` 改为后台 job + 待处理队列 + 空闲唤醒 + ack 闭环，多 job 并存（[测试报告](test-docs/v1.2.0基础测试报告.md)）
-- v1.2.x：安装链路持续加固（Open VSX 直链、稳定缓存、直连 exe、磁盘校验）
-- v2.0.0：
-  - 入口分流（L0-L4）+ 单轨流程（L0-L3）+ 单轨台账；CLI 安装 3 个 Skill 与共享 reference
-  - 修复 D-01 `/dispatch` 命中旧 sid、D-03 台账误报、D-04 回执计数不一致
-  - 编排器项目级自动启动（存在 `.parallel-agent/` 时自动启动）+ 项目级单实例锁 + 静默失败状态栏
-  - Agent 页 target 识别（兼容 `solo-lite` 与 `Agent [管理员]` 形态），自动/手动重连均有等待窗口
-  - CDP 端口绑定失败时提示「立即重启 / 忽略」，所有重启入口统一立即执行
-- v2.1.0：
-  - 修复 D-04 `/bind-arbiter` 绑定 active 轨道、D-01 `doctor` 更正条目误判、D-02 `/delete` 失效 sid 返回码
-  - 新增 TRAE 更新后全量基础测试 Prompt、最小功能可用性全量测试与全量基础测试报告
-  - TRAE 3.4.8 全量基础测试通过（T00-T15、T17；T16 部分平台限制 BLOCKED）
+- v3.0.0：纯文本协议 + 三 Skill + 能力档案 + 零依赖安装器；subagent 轨道，无插件
+- v2.1.0 及更早版本保留在 `v2.1.0` tag 与 `release/v2.1.0` 分支
 
-真实多轨验证项目：[slate-desktop](https://github.com/YorickFin/slate-desktop)。
+## 文档
 
-## 📄 License
+- [v3 方案设计](docs/设计/ParallelAgent%20v3%20方案设计.md)
+- [v3 生命周期治理方案](docs/设计/ParallelAgent%20v3%20生命周期治理方案.md)
+- [v3 一期实施方案](docs/实施/ParallelAgent%20v3%20一期实施方案.md)
+- [v3 最小全量测试](test-docs/模版/ParallelAgent%20v3%20最小全量测试.md)
+- [v3 完整全量测试](test-docs/模版/ParallelAgent%20v3%20完整全量测试.md)
+
+## License
 
 [Apache License 2.0](LICENSE)

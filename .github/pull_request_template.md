@@ -12,14 +12,18 @@
 
 ## 文档同步
 
-- [ ] 控制信号 / HTTP 端点改动已同步 `adapters/trae/shared/references/协议.md`
-- [ ] 仲裁者 / 轨道 Skill 改动已同步 `adapters/trae/skills/*/SKILL.md`
-- [ ] 插件行为改动已同步插件 `README.md` 与 `CHANGELOG.md`
+- [ ] 协议 / 字段 / 校验改动已同步 `references/协议.md`
+- [ ] 分流 / 台账改动已同步 `references/分流.md`、`references/台账.md`
+- [ ] 模板改动已同步 `templates/*.md`
+- [ ] Skill 改动已同步 `skills/*/SKILL.md`
+- [ ] 宿主能力改动已同步 `hosts/*.md`
+- [ ] CLI 改动已同步 `packages/cli/` 与 `README.md`
 - [ ] 不涉及文档（说明原因）
 
 ## 检查清单
 
 - [ ] 分支基于最新 `main`
-- [ ] `pnpm typecheck` 与 `pnpm build` 本地通过（插件与 CLI）
-- [ ] 没有提交 `信号/`、本地日志、`.vsix` 等生成物
+- [ ] `node --check packages/cli/index.js` 通过
+- [ ] `node packages/cli/index.js init --dry-run --root <临时目录> --host trae-cn` 通过
+- [ ] 没有提交 `packages/cli/assets/`、`*.tgz`、`.parallel-agent/`、日志等生成物
 - [ ] 提交信息符合 Conventional Commits

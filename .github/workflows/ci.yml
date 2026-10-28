@@ -1,6 +1,6 @@
 # Copyright 2026 ParallelAgent Contributors
 # SPDX-License-Identifier: Apache-2.0
-#
+
 # PR 与 main 的持续集成：只校验、不发布。
 # 发布由 release.yml 在推送 v* tag 时执行。
 
@@ -13,41 +13,57 @@ on:
     branches: [main]
 
 jobs:
-  verify-extension:
-    runs-on: windows-latest
-    defaults:
-      run:
-        working-directory: adapters/trae/plugin/parallelagent-orchestrator
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 10.33.2
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: pnpm
-          cache-dependency-path: adapters/trae/plugin/parallelagent-orchestrator/pnpm-lock.yaml
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm typecheck
-      - run: pnpm build
-      - run: npx @vscode/vsce package --out parallelagent-orchestrator.vsix --no-dependencies --allow-missing-repository
-
   verify-cli:
-    runs-on: windows-latest
-    defaults:
-      run:
-        working-directory: packages/cli
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 10.33.2
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: pnpm
-          cache-dependency-path: packages/cli/pnpm-lock.yaml
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm typecheck
-      - run: pnpm build
+      - name: Syntax check
+        run: node --check packages/cli/index.js
+      - name: Help
+        run: node packages/cli/index.js --help
+      - name: Dry-run install
+        run: node packages/cli/index.js init --dry-run --root "$RUNNER_TEMP/pa-v3" --host trae-cn
+      - name: Install to temp root
+        run: node packages/cli/index.js init --root "$RUNNER_TEMP/pa-v3" --host trae-cn
+      - name: Assert installed files
+        run: |
+          set -euo pipefail
+          test -f "$RUNNER_TEMP/pa-v3/.trae-cn/skills/parallelagent-solo/SKILL.md"
+          test -f "$RUNNER_TEMP/pa-v3/.trae-cn/skills/parallelagent-arbiter/SKILL.md"
+          test -f "$RUNNER_TEMP/pa-v3/.trae-cn/skills/parallelagent-track/SKILL.md"
+          test -f "$RUNNER_TEMP/pa-v3/.parallel-agent/references/协议.md"
+          test -f "$RUNNER_TEMP/pa-v3/.parallel-agent/templates/任务卡.md"
+          test -f "$RUNNER_TEMP/pa-v3/.parallel-agent/hosts/trae-cn.md"
+          test -f "$RUNNER_TEMP/pa-v3/.parallel-agent/install-state.json"
+          test "$(find "$RUNNER_TEMP/pa-v3/.parallel-agent/references" -type f | wc -l)" -eq 3
+          test "$(find "$RUNNER_TEMP/pa-v3/.parallel-agent/templates" -type f | wc -l)" -eq 8
+          test "$(find "$RUNNER_TEMP/pa-v3/.parallel-agent/hosts" -type f | wc -l)" -eq 2
+
+  verify-protocol:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Check required files
+        run: |
+          set -euo pipefail
+          for f in references/协议.md references/分流.md references/台账.md; do test -f "$f"; done
+          for n in parallelagent-solo parallelagent-arbiter parallelagent-track; do
+            test -f "skills/$n/SKILL.md"
+            grep -q "^name: $n$" "skills/$n/SKILL.md"
+          done
+          test "$(find templates -type f | wc -l)" -eq 8
+          test -f hosts/能力档案-模板.md
+          test -f hosts/trae-cn.md
+      - name: Check prepack asset copy
+        run: |
+          set -euo pipefail
+          node packages/cli/scripts/prepack.js
+          test -f packages/cli/assets/skills/parallelagent-solo/SKILL.md
+          test -f packages/cli/assets/references/协议.md
+          test "$(find packages/cli/assets/templates -type f | wc -l)" -eq 8
