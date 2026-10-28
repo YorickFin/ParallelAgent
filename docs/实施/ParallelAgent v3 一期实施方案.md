@@ -67,6 +67,7 @@ ParallelAgentv3/
 │   └── 交接手册.md
 ├── hosts/
 │   ├── 能力档案-模板.md
+│   ├── agents.md              # 通用 agents 目录占位（未验证）
 │   └── trae-cn.md             # 人工实测值
 ├── packages/
 │   └── cli/                   # npx 安装器（零运行时依赖）

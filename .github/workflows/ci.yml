@@ -24,23 +24,37 @@ jobs:
         run: node --check packages/cli/index.js
       - name: Help
         run: node packages/cli/index.js --help
-      - name: Dry-run install
-        run: node packages/cli/index.js init --dry-run --root "$RUNNER_TEMP/pa-v3" --host trae-cn
-      - name: Install to temp root
-        run: node packages/cli/index.js init --root "$RUNNER_TEMP/pa-v3" --host trae-cn
-      - name: Assert installed files
+      - name: Dry-run install（默认 agents）
+        run: node packages/cli/index.js init --dry-run --root "$RUNNER_TEMP/pa-v3"
+      - name: Install to temp root（默认 agents）
+        run: node packages/cli/index.js init --root "$RUNNER_TEMP/pa-v3"
+      - name: Assert default agents install
         run: |
           set -euo pipefail
-          test -f "$RUNNER_TEMP/pa-v3/.trae-cn/skills/parallelagent-solo/SKILL.md"
-          test -f "$RUNNER_TEMP/pa-v3/.trae-cn/skills/parallelagent-arbiter/SKILL.md"
-          test -f "$RUNNER_TEMP/pa-v3/.trae-cn/skills/parallelagent-track/SKILL.md"
+          test -f "$RUNNER_TEMP/pa-v3/.agents/skills/parallelagent-solo/SKILL.md"
+          test -f "$RUNNER_TEMP/pa-v3/.agents/skills/parallelagent-arbiter/SKILL.md"
+          test -f "$RUNNER_TEMP/pa-v3/.agents/skills/parallelagent-track/SKILL.md"
           test -f "$RUNNER_TEMP/pa-v3/.parallel-agent/references/协议.md"
           test -f "$RUNNER_TEMP/pa-v3/.parallel-agent/templates/任务卡.md"
-          test -f "$RUNNER_TEMP/pa-v3/.parallel-agent/hosts/trae-cn.md"
+          test -f "$RUNNER_TEMP/pa-v3/.parallel-agent/hosts/agents.md"
           test -f "$RUNNER_TEMP/pa-v3/.parallel-agent/install-state.json"
           test "$(find "$RUNNER_TEMP/pa-v3/.parallel-agent/references" -type f | wc -l)" -eq 3
           test "$(find "$RUNNER_TEMP/pa-v3/.parallel-agent/templates" -type f | wc -l)" -eq 8
-          test "$(find "$RUNNER_TEMP/pa-v3/.parallel-agent/hosts" -type f | wc -l)" -eq 2
+          test "$(find "$RUNNER_TEMP/pa-v3/.parallel-agent/hosts" -type f | wc -l)" -eq 3
+      - name: Install for Trae CN
+        run: node packages/cli/index.js init --root "$RUNNER_TEMP/pa-v3-trae" --host trae-cn
+      - name: Assert Trae CN install
+        run: |
+          set -euo pipefail
+          test -f "$RUNNER_TEMP/pa-v3-trae/.trae-cn/skills/parallelagent-solo/SKILL.md"
+          test -f "$RUNNER_TEMP/pa-v3-trae/.parallel-agent/hosts/trae-cn.md"
+      - name: Install for custom host
+        run: node packages/cli/index.js init --root "$RUNNER_TEMP/pa-v3-custom" --host cursor --skills-dir "$RUNNER_TEMP/pa-v3-custom/cursor-skills"
+      - name: Assert custom host install
+        run: |
+          set -euo pipefail
+          test -f "$RUNNER_TEMP/pa-v3-custom/cursor-skills/parallelagent-solo/SKILL.md"
+          test -f "$RUNNER_TEMP/pa-v3-custom/.parallel-agent/install-state.json"
 
   verify-protocol:
     runs-on: ubuntu-latest
@@ -60,10 +74,13 @@ jobs:
           test "$(find templates -type f | wc -l)" -eq 8
           test -f hosts/能力档案-模板.md
           test -f hosts/trae-cn.md
+          test -f hosts/agents.md
+          test "$(find hosts -type f | wc -l)" -eq 3
       - name: Check prepack asset copy
         run: |
           set -euo pipefail
           node packages/cli/scripts/prepack.js
           test -f packages/cli/assets/skills/parallelagent-solo/SKILL.md
           test -f packages/cli/assets/references/协议.md
+          test -f packages/cli/assets/hosts/agents.md
           test "$(find packages/cli/assets/templates -type f | wc -l)" -eq 8

@@ -36,18 +36,30 @@ test-docs/    # 测试模版、报告、评估、归档
 ```powershell
 node --check packages/cli/index.js
 node packages/cli/index.js --help
-node packages/cli/index.js init --dry-run --root "$env:TEMP\pa-v3-test" --host trae-cn
-node packages/cli/index.js init --root "$env:TEMP\pa-v3-test" --host trae-cn
+node packages/cli/index.js init --dry-run --root "$env:TEMP\pa-v3-test"
+node packages/cli/index.js init --root "$env:TEMP\pa-v3-test"
 ```
 
 安装后检查：
 
 ```powershell
-Test-Path "$env:TEMP\pa-v3-test\.trae-cn\skills\parallelagent-solo\SKILL.md"
+Test-Path "$env:TEMP\pa-v3-test\.agents\skills\parallelagent-solo\SKILL.md"
 Test-Path "$env:TEMP\pa-v3-test\.parallel-agent\references\协议.md"
 Test-Path "$env:TEMP\pa-v3-test\.parallel-agent\templates\任务卡.md"
-Test-Path "$env:TEMP\pa-v3-test\.parallel-agent\hosts\trae-cn.md"
+Test-Path "$env:TEMP\pa-v3-test\.parallel-agent\hosts\agents.md"
 Test-Path "$env:TEMP\pa-v3-test\.parallel-agent\install-state.json"
+```
+
+兼容与自定义宿主检查：
+
+```powershell
+# 旧的 Trae CN 目录
+node packages/cli/index.js init --root "$env:TEMP\pa-v3-trae" --host trae-cn
+Test-Path "$env:TEMP\pa-v3-trae\.trae-cn\skills\parallelagent-solo\SKILL.md"
+
+# 未内置宿主：--host <名称> + --skills-dir 指定技能目录
+node packages/cli/index.js init --root "$env:TEMP\pa-v3-custom" --host cursor --skills-dir "$env:TEMP\pa-v3-custom\cursor-skills"
+Test-Path "$env:TEMP\pa-v3-custom\cursor-skills\parallelagent-solo\SKILL.md"
 ```
 
 涉及协议、Skill 或行为的改动，必须同步更新对应文档：

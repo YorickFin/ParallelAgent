@@ -10,12 +10,12 @@
 npx parallelagent@latest init
 ```
 
-默认安装到 Trae CN：
+默认安装到 `~/.agents/skills`（Trae CN 重载后会同时扫描该目录）：
 
-- `~/.trae-cn/skills/`：`parallelagent-solo`、`parallelagent-arbiter`、`parallelagent-track`
+- `~/.agents/skills/`：`parallelagent-solo`、`parallelagent-arbiter`、`parallelagent-track`
 - `~/.parallel-agent/references/`：`协议.md`、`分流.md`、`台账.md`
 - `~/.parallel-agent/templates/`：8 份模板
-- `~/.parallel-agent/hosts/`：能力档案模板 + Trae CN 预置实测值
+- `~/.parallel-agent/hosts/`：能力档案模板 + Trae CN 预置实测值 + 通用 `agents` 占位档案
 - `~/.parallel-agent/能力档案/`：首次运行后由 Agent 写入
 - `~/.parallel-agent/install-state.json`：安装版本与文件校验和
 
@@ -23,14 +23,21 @@ npx parallelagent@latest init
 
 | 选项 | 说明 |
 |---|---|
-| `--host <trae-cn\|workbuddy\|claude-code>` | 目标宿主，默认 `trae-cn` |
+| `--host <agents\|trae-cn\|workbuddy\|claude-code>` | 目标宿主，默认 `agents` |
 | `--root <目录>` | 安装根目录，默认用户主目录 |
-| `--skills-dir <目录>` | 覆盖 Skill 安装目录 |
+| `--skills-dir <目录>` | 覆盖 Skill 安装目录；未内置宿主可配合 `--host <名称>` 使用 |
 | `--dry-run` | 只打印动作，不写文件 |
 | `--force` | 覆盖用户改过的产品文件 |
 | `--help` | 显示帮助 |
 
-从 v2 升级：v3 不再安装扩展，请先卸载旧的 `yorickfin.parallelagent-orchestrator`，并手动清理 `~/.trae-cn/shared/references/`；v3 会把三个 Skill 覆盖到 `~/.trae-cn/skills/`。
+从 v2 升级：v3 不再安装扩展，请先卸载旧的 `yorickfin.parallelagent-orchestrator`，并手动清理 `~/.trae-cn/shared/references/`。v3 默认把三个 Skill 装到 `~/.agents/skills/`；如果旧的 `~/.trae-cn/skills/parallelagent-*` 还在，请手动删除，避免 Trae 同时加载新旧两套。想继续用旧目录可执行 `init --host trae-cn`。
+
+### 其他宿主
+
+- 已有预设：`agents`（`~/.agents/skills`）、`trae-cn`、`workbuddy`、`claude-code`。
+- 支持 `SKILL.md` 自动发现的其他宿主：`init --host <名称> --skills-dir <该宿主的 skills 目录>`。
+- 只支持 `AGENTS.md` / 规则文件的宿主：没有 Skill 自动激活；在项目规则里要求读取 `~/.parallel-agent/references/分流.md`、`协议.md`、`台账.md` 和 `templates/`，技能内容作为规则注入。
+- 能力档案：复制 `~/.parallel-agent/hosts/能力档案-模板.md` 到 `~/.parallel-agent/能力档案/<host>.md` 并按 P1-P6 探测；一期只预置 Trae CN 实测值，`agents` 预置档案为 `confidence: 未验证`（默认 L0-L3、串行）。
 
 ## 设计
 
@@ -69,6 +76,7 @@ test-docs/    # 测试模版、报告、评估
 ## 状态
 
 - v3.0.0：纯文本协议 + 三 Skill + 能力档案 + 零依赖安装器；subagent 轨道，无插件
+- 未发布：CLI 默认安装目录改为 `~/.agents/skills`，新增 `agents` 通用宿主预设与 `hosts/agents.md`
 - v2.1.0 及更早版本保留在 `v2.1.0` tag 与 `release/v2.1.0` 分支
 
 ## 文档

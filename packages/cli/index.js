@@ -16,6 +16,7 @@ const crypto = require('crypto');
 const PKG = require('./package.json');
 
 const HOSTS = {
+  agents: { skillsDir: ['.agents', 'skills'], label: 'Agent Skills（通用）' },
   'trae-cn': { skillsDir: ['.trae-cn', 'skills'], label: 'Trae CN' },
   workbuddy: { skillsDir: ['.workbuddy', 'skills'], label: 'WorkBuddy' },
   'claude-code': { skillsDir: ['.claude', 'skills'], label: 'Claude Code' },
@@ -30,9 +31,9 @@ function usage() {
   parallelagent init [选项]
 
 选项：
-  --host <trae-cn|workbuddy|claude-code>  目标宿主（默认 trae-cn）
+  --host <agents|trae-cn|workbuddy|claude-code>  目标宿主（默认 agents）
   --root <目录>                            安装根目录（默认用户主目录，用于测试/隔离）
-  --skills-dir <目录>                     覆盖 Skill 安装目录
+  --skills-dir <目录>                     覆盖 Skill 安装目录（也可用于未内置的宿主）
   --dry-run                               只打印将要执行的动作
   --force                                 覆盖用户已修改的文件
   --help                                  显示帮助
@@ -45,7 +46,7 @@ function usage() {
 }
 
 function parseArgs(argv) {
-  const out = { cmd: 'help', host: 'trae-cn', root: os.homedir(), dryRun: false, force: false };
+  const out = { cmd: 'help', host: 'agents', root: os.homedir(), dryRun: false, force: false };
   let help = false;
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -138,7 +139,11 @@ function copyWithGuard(src, dest, state, opts, report) {
 
 function init(opts) {
   const host = HOSTS[opts.host];
-  if (!host) throw new Error(`不支持的宿主：${opts.host}（可选：${Object.keys(HOSTS).join(' / ')}）`);
+  if (!host && !opts.skillsDir) {
+    throw new Error(
+      `不支持的宿主：${opts.host}（内置：${Object.keys(HOSTS).join(' / ')}；自定义宿主请用 --skills-dir）`,
+    );
+  }
 
   const root = path.resolve(opts.root);
   const skillsDir = opts.skillsDir
@@ -148,7 +153,7 @@ function init(opts) {
   const stateFile = path.join(dataDir, 'install-state.json');
   const assetRoot = resolveAssetRoot();
 
-  console.log(`宿主：${host.label}`);
+  console.log(`宿主：${host?.label ?? opts.host}`);
   console.log(`Skill 目录：${skillsDir}`);
   console.log(`数据目录：${dataDir}`);
   console.log(`资产来源：${assetRoot}`);
@@ -203,7 +208,7 @@ function init(opts) {
   console.log(`
 安装完成。首次使用前需要一份能力档案（~/${DATA_DIR}/能力档案/${opts.host}.md）。
 
-已随包安装该宿主的预置实测值：~/${DATA_DIR}/hosts/${opts.host}.md（可采用，需用户确认）。
+已随包安装该宿主的预置档案：~/${DATA_DIR}/hosts/${opts.host}.md（confidence 非「实测」时需确认；不存在则按 能力档案-模板.md 探测）。
 
 请选择（可直接回复序号，或自由输入）：
   1. 立即初始化测试：由 Agent 按 P1-P6 探测（会 spawn 若干子代理）

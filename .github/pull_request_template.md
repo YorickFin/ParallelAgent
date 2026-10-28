@@ -24,6 +24,7 @@
 
 - [ ] 分支基于最新 `main`
 - [ ] `node --check packages/cli/index.js` 通过
-- [ ] `node packages/cli/index.js init --dry-run --root <临时目录> --host trae-cn` 通过
+- [ ] `node packages/cli/index.js init --dry-run --root <临时目录>` 通过
+- [ ] `node packages/cli/index.js init --root <临时目录> --host <宿主> --skills-dir <目录>` 通过（自定义宿主时）
 - [ ] 没有提交 `packages/cli/assets/`、`*.tgz`、`.parallel-agent/`、日志等生成物
 - [ ] 提交信息符合 Conventional Commits
