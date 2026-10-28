@@ -6,7 +6,7 @@
 > **测试项目**：不要选 ParallelAgent 源码仓库；所有测试产物都留在空项目里。
 >
 > **使用前替换**：
-> - `<ParallelAgent仓库>` → ParallelAgent 源码仓库绝对路径（例如 `e:\备份\project\Agent\ParallelAgent`）。
+> - `<ParallelAgent仓库>` → ParallelAgent 源码仓库绝对路径（例如 `D:\path\to\ParallelAgent`）。
 > - 其余路径、版本、端口均按现场实测记录，不要照抄示例。
 
 ---
