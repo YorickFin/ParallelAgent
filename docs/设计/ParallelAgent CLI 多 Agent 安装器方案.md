@@ -1,6 +1,9 @@
 # ParallelAgent CLI 多 Agent 安装器方案
 
-- 状态：草案（待评审）
+- 状态：**已废弃（Superseded，2026-10-31）**
+- 决策：不再自研多 Agent 安装/链接/卸载。通用安装与卸载交给上游 `npx skills`（vercel-labs/skills，覆盖 75+ Agent）或 `gh skill`；本仓库 CLI 只保留共享数据（references / templates / hosts）安装，不建链接、不删除文件。
+- 原因：自研 `remove` 需要信任安装状态文件里的任意路径，且无确认交互，存在误删风险；上游已维护宿主路径表与锁文件，重复实现无收益。
+- 本文保留作为历史分析与取舍记录，实现以 [README](../../README.md) 与 [packages/cli/index.js](../../packages/cli/index.js) 为准。
 - 日期：2026-10-28
 - 关联分支：`feat/agents-default-host`（`893a102`，已把默认安装目录改为 `~/.agents/skills`）
 - 上游版本：v3.0.0

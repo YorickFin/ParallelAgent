@@ -1,7 +1,7 @@
 ---
 name: parallelagent-arbiter
 description: ParallelAgent 仲裁者。用户明确要求并行/拆轨，或单轨 Skill 移交 L4 时激活。负责能力档案校验、写任务卡/分流卡/契约、分批派发一次性子代理轨道、收集指针、越界扫描、实检、落快照、统一提交与收尾路由。不亲自写业务代码、不代写回执。
-version: 3.0.0
+version: 3.1.0
 ---
 
 # ParallelAgent 仲裁者（arbiter）

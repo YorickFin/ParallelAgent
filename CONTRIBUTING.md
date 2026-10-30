@@ -24,7 +24,7 @@ skills/       # 三个 Skill（solo / arbiter / track）
 references/   # 协议 / 分流 / 台账
 templates/    # 8 份空白模板
 hosts/        # 能力档案模板与宿主预置值
-packages/cli/ # npx 安装器（零运行时依赖）
+packages/cli/ # npx 安装器（只装共享数据，零运行时依赖）
 docs/         # 设计、实施、归档
 test-docs/    # 测试模版、报告、评估、归档
 ```
@@ -36,30 +36,34 @@ test-docs/    # 测试模版、报告、评估、归档
 ```powershell
 node --check packages/cli/index.js
 node packages/cli/index.js --help
-node packages/cli/index.js init --dry-run --root "$env:TEMP\pa-v3-test"
 node packages/cli/index.js init --root "$env:TEMP\pa-v3-test"
+node packages/cli/index.js init --root "$env:TEMP\pa-v3-test" --force
+```
+
+Skill 安装不在本仓库校验范围内，冒烟时可用上游命令（本地目录也可）：
+
+```powershell
+npx skills add . -g -a trae-cn
+npx skills list
+npx skills remove --global -a trae-cn parallelagent-*
 ```
 
 安装后检查：
 
 ```powershell
-Test-Path "$env:TEMP\pa-v3-test\.agents\skills\parallelagent-solo\SKILL.md"
 Test-Path "$env:TEMP\pa-v3-test\.parallel-agent\references\协议.md"
 Test-Path "$env:TEMP\pa-v3-test\.parallel-agent\templates\任务卡.md"
 Test-Path "$env:TEMP\pa-v3-test\.parallel-agent\hosts\agents.md"
+Test-Path "$env:TEMP\pa-v3-test\.parallel-agent\能力档案"
 Test-Path "$env:TEMP\pa-v3-test\.parallel-agent\install-state.json"
+Test-Path "$env:TEMP\pa-v3-test\.agents\skills\parallelagent-solo"   # 应为 False：CLI 不装 Skill
 ```
 
-兼容与自定义宿主检查：
+dry-run 不落盘：
 
 ```powershell
-# 旧的 Trae CN 目录
-node packages/cli/index.js init --root "$env:TEMP\pa-v3-trae" --host trae-cn
-Test-Path "$env:TEMP\pa-v3-trae\.trae-cn\skills\parallelagent-solo\SKILL.md"
-
-# 未内置宿主：--host <名称> + --skills-dir 指定技能目录
-node packages/cli/index.js init --root "$env:TEMP\pa-v3-custom" --host cursor --skills-dir "$env:TEMP\pa-v3-custom\cursor-skills"
-Test-Path "$env:TEMP\pa-v3-custom\cursor-skills\parallelagent-solo\SKILL.md"
+node packages/cli/index.js init --root "$env:TEMP\pa-v3-dry" --dry-run
+if (Test-Path "$env:TEMP\pa-v3-dry") { throw 'dry-run 不应创建目录' }
 ```
 
 涉及协议、Skill 或行为的改动，必须同步更新对应文档：
@@ -72,6 +76,8 @@ Test-Path "$env:TEMP\pa-v3-custom\cursor-skills\parallelagent-solo\SKILL.md"
 | 仲裁者 / 轨道 / 单轨行为 | `skills/*/SKILL.md` |
 | 宿主能力与预置值 | `hosts/*.md` |
 | CLI | `packages/cli/` 与 `README.md` |
+| CLI 安装逻辑 | `packages/cli/index.js`、`README.md` |
+| Skill 安装/卸载 | 上游 `npx skills` / `gh skill`，本仓库不实现 |
 | 设计与实施 | `docs/` |
 | 测试 | `test-docs/模版/`、`test-docs/报告/` |
 
@@ -147,8 +153,8 @@ git log -1 --format='A: %an <%ae> | C: %cn <%ce>'
 6. 打 tag 并推送：
 
 ```powershell
-git tag -a v3.0.0 -m "v3.0.0: 纯文本协议与 subagent 轨道"
-git push origin refs/tags/v3.0.0
+git tag -a v3.1.0 -m "v3.1.0: Skill 安装交给上游，CLI 只装共享数据"
+git push origin refs/tags/v3.1.0
 ```
 
 7. `release.yml` 自动执行：`npm pack`（`prepack` 复制 assets）→ GitHub Release → npm CLI 发布（GitHub OIDC Trusted Publisher）
