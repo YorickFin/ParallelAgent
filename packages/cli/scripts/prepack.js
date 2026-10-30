@@ -2,7 +2,8 @@
 'use strict';
 
 /**
- * 将仓库根的 v3 资产复制到 packages/cli/assets，供 npm pack 打包。
+ * 将仓库根的共享数据（references / templates / hosts）复制到 packages/cli/assets，供 npm pack 打包。
+ * Skill 由上游 npx skills / gh skill 从 GitHub 仓库安装，不进入 npm 包。
  * 运行时（仓库内直接执行 index.js）不需要 assets，CLI 会回退到仓库根。
  */
 
@@ -12,7 +13,7 @@ const path = require('path');
 const pkgRoot = path.resolve(__dirname, '..');
 const repoRoot = path.resolve(pkgRoot, '..', '..');
 const assets = path.join(pkgRoot, 'assets');
-const categories = ['skills', 'references', 'templates', 'hosts'];
+const categories = ['references', 'templates', 'hosts'];
 
 fs.rmSync(assets, { recursive: true, force: true });
 fs.mkdirSync(assets, { recursive: true });

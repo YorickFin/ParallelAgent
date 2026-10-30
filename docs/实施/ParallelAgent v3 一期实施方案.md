@@ -67,6 +67,7 @@ ParallelAgentv3/
 │   └── 交接手册.md
 ├── hosts/
 │   ├── 能力档案-模板.md
+│   ├── agents.md              # 通用 agents 目录占位（未验证）
 │   └── trae-cn.md             # 人工实测值
 ├── packages/
 │   └── cli/                   # npx 安装器（零运行时依赖）
@@ -159,14 +160,14 @@ V3 与 V4 是必须项；V5-V7 允许在二期补测，但方案里必须写明�
 
 | 项 | 要求 |
 |---|---|
-| 命令形态 | `npx parallelagent@latest init`（一期先支持 Trae CN 路径） |
-| 动作 | 复制 3 个 Skill、3 份 reference、8 份模板、能力档案模板到宿主目录；创建 `~/.parallel-agent/能力档案/` |
-| 安装状态 | 写 `install-state.json`（安装版本、宿主类型、目标路径、各文件校验和、安装时间）；**CLI 独有，Agent 不写** |
+| 命令形态 | Skill：`npx skills add YorickFin/ParallelAgent -g -a agents`；共享数据：`npx parallelagent@latest init` |
+| 动作 | CLI 只复制 3 份 reference、8 份模板、能力档案模板到 `~/.parallel-agent/`；不安装 Skill、不建链接、不删除文件 |
+| 安装状态 | 写 `install-state.json`（安装版本、数据目录、各文件校验和、安装时间）；**CLI 独有，Agent 不写** |
 | 升级覆盖 | 产品文件**全量覆盖**；若校验和与 `install-state.json` 不符（用户改过），写 `<file>.new` 并提示；**能力档案与项目 `.parallel-agent/` 永不覆盖** |
 | 首次提示 | 安装结束时打印 §7.2 的三选一提示（立即初始化 / 触发 L4 时再测 / 其它：用户自由输入），**不代替用户做选择** |
 | 边界 | 不探测、不写能力档案、不碰项目目录 |
 | 约束 | 零运行时依赖；不注册服务；不改宿主配置；重复执行幂等 |
-| 完成判据 | 新机器上跑一次即可完成安装；`--help` 与重复执行均正常 |
+| 完成判据 | 新机器上跑两条命令即可完成安装；`--help` 与重复执行均正常 |
 
 ---
 
